@@ -71,21 +71,7 @@ final class Injector {
     }
 
     func scroll(_ s: Scroll) {
-        let units: CGScrollEventUnit = s.continuous ? .pixel : .line
-        let wheel1 = Int32(clamping: s.continuous ? s.points1 : s.lines1)
-        let wheel2 = Int32(clamping: s.continuous ? s.points2 : s.lines2)
-        guard let event = CGEvent(scrollWheelEvent2Source: source, units: units, wheelCount: 2, wheel1: wheel1, wheel2: wheel2, wheel3: 0) else { return }
-        event.setIntegerValueField(.scrollWheelEventDeltaAxis1, value: s.lines1)
-        event.setIntegerValueField(.scrollWheelEventDeltaAxis2, value: s.lines2)
-        event.setDoubleValueField(.scrollWheelEventFixedPtDeltaAxis1, value: s.fixed1)
-        event.setDoubleValueField(.scrollWheelEventFixedPtDeltaAxis2, value: s.fixed2)
-        event.setIntegerValueField(.scrollWheelEventPointDeltaAxis1, value: s.points1)
-        event.setIntegerValueField(.scrollWheelEventPointDeltaAxis2, value: s.points2)
-        event.setIntegerValueField(.scrollWheelEventIsContinuous, value: s.continuous ? 1 : 0)
-        event.setIntegerValueField(.scrollWheelEventScrollPhase, value: s.phase)
-        event.setIntegerValueField(.scrollWheelEventMomentumPhase, value: s.momentumPhase)
-        event.location = CGPoint(x: s.at.x, y: s.at.y)
-        post(event, flags: s.at.flags)
+        post(ScrollReverser.shared.arriving(s).makeEvent(source: source), flags: s.at.flags)
     }
 
     func key(_ k: Key) {

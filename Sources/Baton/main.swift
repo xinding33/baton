@@ -54,6 +54,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         terminationSource?.resume()
 
+        ScrollReverser.shared.onStateChanged = { [weak self] in self?.refreshMenu() }
+        ScrollReverser.shared.start(forwarding: { [anchor] in anchor.map { $0.focus != .local } ?? false })
+
         control = ControlServer { [weak self] words in self?.command(words) ?? "" }
         control?.start()
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -82,8 +85,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return anchor?.bluetoothSteps(steps) ?? client?.bluetoothSteps(steps) ?? ""
         case "keyboard":
             return anchor?.keyboardCommand(Array(words.dropFirst())) ?? "only the anchor moves the keyboard"
+        case "scroll":
+            return ScrollReverser.shared.command(Array(words.dropFirst()))
         default:
-            return "commands: status, home, pause, resume, sim, arrange, keyboard"
+            return "commands: status, home, pause, resume, sim, arrange, keyboard, scroll"
         }
     }
 
@@ -139,6 +144,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             title = client.isConnected ? (client.active ? "⇄ ●" : "⇄") : "⇄ ?"
             menu.addItem(withTitle: client.isConnected ? "Connected to the anchor" : "Looking for the anchor…", action: nil, keyEquivalent: "")
         }
+        ScrollReverser.shared.addMenuItems(to: menu)
         menu.addItem(.separator())
         menu.addItem(withTitle: "Quit Baton", action: #selector(quit), keyEquivalent: "").target = self
         statusItem.button?.title = title
