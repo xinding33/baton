@@ -12,6 +12,7 @@ final class Injector {
     private var buttonsDown: Set<Int> = []
     private var keysDown: Set<UInt16> = []
     private var modifiersDown: Set<UInt16> = []
+    private var mediaKeysDown: Set<Int> = []
     private var position: CGPoint = cursorLocation()
     private(set) var injected = 0
 
@@ -91,6 +92,11 @@ final class Injector {
         post(event, flags: k.flags)
     }
 
+    func mediaKey(_ k: MediaKey) {
+        if k.down { mediaKeysDown.insert(k.code) } else { mediaKeysDown.remove(k.code) }
+        post(k.makeEvent(), flags: k.flags)
+    }
+
     /// Lets go of everything still held, so nothing sticks when the cursor leaves or the link drops.
     func releaseAll() {
         for code in keysDown {
@@ -98,6 +104,9 @@ final class Injector {
         }
         for code in modifiersDown {
             key(Key(code: code, down: false, isModifier: true, autorepeat: false, flags: 0))
+        }
+        for code in mediaKeysDown {
+            mediaKey(MediaKey(code: code, down: false))
         }
         for number in buttonsDown {
             button(Button(at: Motion(x: position.x, y: position.y, seq: 0), button: number, down: false, clickState: 1))

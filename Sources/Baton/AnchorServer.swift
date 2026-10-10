@@ -48,6 +48,7 @@ final class AnchorServer {
     var onPeerLost: ((String) -> Void)?
     /// A client passed on a key typed on the shared keyboard.
     var onForwardedKey: ((String, Key) -> Void)?
+    var onForwardedMediaKey: ((MediaKey) -> Void)?
     var onKeyboardMoved: (() -> Void)?
     /// A client's own trackpad, mouse or keyboard was used, with its cursor at this point.
     var onLocalInput: ((String, CGPoint) -> Void)?
@@ -128,6 +129,8 @@ final class AnchorServer {
                 WakeTogether.shared.heardInUse(from: peer.name)
             case let .key(key):
                 self.onForwardedKey?(peer.name, key)
+            case let .mediaKey(key):
+                self.onForwardedMediaKey?(key)
             case let .keyboardPresent(present):
                 peer.keyboardPresent = present
                 self.onKeyboardMoved?()

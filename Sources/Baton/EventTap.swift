@@ -1,3 +1,4 @@
+import BatonCore
 import CoreGraphics
 import Foundation
 
@@ -9,7 +10,7 @@ final class EventTap {
         .mouseMoved, .leftMouseDragged, .rightMouseDragged, .otherMouseDragged,
         .leftMouseDown, .leftMouseUp, .rightMouseDown, .rightMouseUp, .otherMouseDown, .otherMouseUp,
         .scrollWheel,
-    ] + keys
+    ] + keys + [systemDefined]
     static let keys: [CGEventType] = [.keyDown, .keyUp, .flagsChanged]
 
     private var port: CFMachPort?
@@ -37,6 +38,7 @@ final class EventTap {
                 if let port = tap.port { CGEvent.tapEnable(tap: port, enable: true) }
                 return Unmanaged.passUnretained(event)
             }
+            if type == EventTap.systemDefined, MediaKey(event) == nil { return Unmanaged.passUnretained(event) }
             // Events this app replayed are not input to capture again.
             if event.getIntegerValueField(.eventSourceUserData) == Injector.marker {
                 return Unmanaged.passUnretained(event)

@@ -193,6 +193,8 @@ public enum Message: Codable, Sendable {
     case wake(WakeRequest)
     /// The sender is in use. A client sends it to the anchor, which passes it on to the other clients.
     case inUse
+    /// A volume, brightness or playback key, sent the same two ways as `key`.
+    case mediaKey(MediaKey)
 }
 
 public enum Wire {
