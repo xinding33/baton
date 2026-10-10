@@ -39,7 +39,8 @@ If you edit the file by hand, restart the agent afterwards:
 ## Using a Mac's own trackpad
 
 Touching a client's own trackpad, mouse or keyboard brings the shared cursor to that Mac, at the
-spot where its cursor is. The mouse then carries on from there. Keys from a client's own keyboard
+spot where its cursor is. The mouse then carries on from there. The shared mouse and keyboard come
+first: nothing happens if either was used in the last two seconds. Keys from a client's own keyboard
 only count while the shared keyboard is attached to another Mac; Baton cannot tell two keyboards
 on one Mac apart.
 

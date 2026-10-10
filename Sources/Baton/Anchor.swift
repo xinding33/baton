@@ -254,10 +254,17 @@ final class Anchor {
         let point = machine.clamp(point)
         if focus == .remote(name) {
             remotePosition = point
-        } else if !paused, mayCross {
+        } else if !paused, mayCross, !sharedInputInUse {
             log("\(name) was used directly")
             enterRemote(name, at: point, flags: [])
         }
+    }
+
+    /// The shared mouse and keyboard come first: while they are in use, a brush of another Mac's
+    /// trackpad must not take the cursor away from under them.
+    private var sharedInputInUse: Bool {
+        let last = max(lastPointerActivityAt, keyCapture.lastActivityAt, lastForwardedKeyAt)
+        return Net.monotonicMillis() - last < 2000
     }
 
     func setPaused(_ value: Bool) {
