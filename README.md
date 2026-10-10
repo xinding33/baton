@@ -56,9 +56,10 @@ keyboard, the new one pairs with it).
 
 A Mac that goes to sleep while it has the keyboard forgets it first, and the anchor has the Mac
 with the cursor pair with it (the anchor itself when `keyboardFollows` is off). The same happens,
-ten seconds later, when the Mac that had the keyboard drops off the network. While the Mac it is
-paired with is still connected, a keyboard that disappears is taken to be switched off, and is
-left alone until it comes back.
+ten seconds later, when the Mac that had the keyboard drops off the network. While a connected
+Mac still holds the keyboard's pairing, a keyboard that disappears is taken to be switched off,
+and is left alone until it comes back. If no connected Mac holds its pairing, it cannot come back
+by itself, so a Mac pairs with it afresh.
 
 ## Build and install
 

@@ -27,6 +27,15 @@ if [ ! -f "$HOME/$SUPPORT/secret.key" ]; then
     (umask 077 && openssl rand -hex 32 > "$HOME/$SUPPORT/secret.key")
 fi
 
+# Restarting the anchor in the middle of a keyboard handoff leaves the keyboard paired with no Mac.
+CTL="$HOME/Applications/Baton.app/Contents/MacOS/Baton"
+for _ in $(seq 60); do
+    [ -x "$CTL" ] || break
+    perl -e 'alarm 6; exec @ARGV' "$CTL" ctl keyboard 2>/dev/null | grep -q '"handoffInProgress" : "[^n]' || break
+    echo "waiting for a keyboard handoff to finish"
+    sleep 1
+done
+
 for machine in "${MACHINES[@]}"; do
     read -r name role host <<< "$machine"
     if [ $# -gt 0 ] && [[ ! " $* " == *" $name "* ]]; then continue; fi

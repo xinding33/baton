@@ -13,6 +13,8 @@ final class PeerSession {
     var rttMs: Double = 0
     /// Whether the shared keyboard is attached to this client.
     var keyboardPresent = false
+    /// Whether this client holds a pairing with the shared keyboard. Assumed until it says.
+    var keyboardPaired = true
 
     init(name: String, link: Link, displays: [DisplayInfo], codec: DatagramCodec) {
         self.name = name
@@ -124,6 +126,8 @@ final class AnchorServer {
                 self.onKeyboardMoved?()
             case let .keyboardResult(result):
                 self.commands.removeValue(forKey: result.id)?.completion(result.ok, result.detail)
+            case let .keyboardPaired(paired):
+                peer.keyboardPaired = paired
             case let .localInput(motion):
                 self.onLocalInput?(peer.name, CGPoint(x: motion.x, y: motion.y))
             case .sleeping:

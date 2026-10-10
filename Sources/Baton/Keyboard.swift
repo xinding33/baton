@@ -41,12 +41,23 @@ enum SharedKeyboard {
     }
 }
 
-/// Reports when the shared keyboard attaches to or detaches from this Mac.
+/// Reports when the shared keyboard attaches to or detaches from this Mac, and whether this Mac
+/// holds a pairing with it.
 final class KeyboardPresence {
+    private let mover: KeyboardMover
     private var timer: DispatchSourceTimer?
+    private var ticks = 0
+    private var checking = false
     private(set) var isPresent = false
+    /// Assumed until checked: a wrong "yes" only delays a rescue, a wrong "no" would steal the keyboard.
+    private(set) var isPaired = true
     private(set) var address: String?
     var onChange: ((Bool) -> Void)?
+    var onPairingChange: ((Bool) -> Void)?
+
+    init(mover: KeyboardMover) {
+        self.mover = mover
+    }
 
     func watch(address: String?) {
         self.address = address
@@ -54,8 +65,12 @@ final class KeyboardPresence {
         timer = nil
         guard let address else { return update(false) }
         update(SharedKeyboard.isAttached(address: address))
+        checkPairing()
         timer = repeatingTimer(every: 0.25) { [weak self] in
-            self?.update(SharedKeyboard.isAttached(address: address))
+            guard let self else { return }
+            self.update(SharedKeyboard.isAttached(address: address))
+            self.ticks += 1
+            if self.ticks % 8 == 0 { self.checkPairing() }
         }
     }
 
@@ -64,6 +79,20 @@ final class KeyboardPresence {
         isPresent = present
         log(present ? "shared keyboard attached" : "shared keyboard detached")
         onChange?(present)
+        checkPairing()
+    }
+
+    private func checkPairing() {
+        guard let address, !checking else { return }
+        checking = true
+        mover.isPaired(address: address) { [weak self] paired in
+            guard let self else { return }
+            self.checking = false
+            guard let paired, paired != self.isPaired, address == self.address else { return }
+            self.isPaired = paired
+            log(paired ? "this Mac is paired with the shared keyboard" : "this Mac holds no pairing with the shared keyboard")
+            self.onPairingChange?(paired)
+        }
     }
 }
 
@@ -150,6 +179,15 @@ final class KeyboardMover: NSObject, IOBluetoothDevicePairDelegate, CBCentralMan
             }
             let detail = notes.joined(separator: "; ")
             DispatchQueue.main.async { completion(ok, detail) }
+        }
+    }
+
+    /// Whether this Mac holds a pairing with the keyboard, or nil if that cannot be told.
+    func isPaired(address: String, completion: @escaping (Bool?) -> Void) {
+        guard CBManager.authorization == .allowedAlways else { return completion(nil) }
+        BluetoothThread.shared.async {
+            let paired = IOBluetoothDevice(addressString: address)?.isPaired()
+            DispatchQueue.main.async { completion(paired) }
         }
     }
 

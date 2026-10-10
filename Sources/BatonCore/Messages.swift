@@ -183,6 +183,8 @@ public enum Message: Codable, Sendable {
     case localInput(Motion)
     /// Client to anchor: the client is about to sleep, and has let go of the shared keyboard if it had it.
     case sleeping
+    /// Client to anchor: whether the client still holds a pairing with the shared keyboard.
+    case keyboardPaired(Bool)
 }
 
 public enum Wire {

@@ -27,8 +27,8 @@ final class ClientAgent {
     private var idleCursorWatch: DispatchSourceTimer?
     private var tap: EventTap!
     private let keyCapture = KeyCapture()
-    private let presence = KeyboardPresence()
     private let mover = KeyboardMover()
+    private lazy var presence = KeyboardPresence(mover: mover)
     private let sleepWatcher = SleepWatcher()
     private var localReportPending = false
     private var claimedAt: UInt64 = 0
@@ -121,6 +121,7 @@ final class ClientAgent {
             self?.link?.send(.keyboardPresent(present))
             self?.onStateChanged?()
         }
+        presence.onPairingChange = { [weak self] paired in self?.link?.send(.keyboardPaired(paired)) }
         startBrowser()
         displayWatcher = DisplayWatcher { [weak self] in
             self?.link?.send(.displays(currentDisplays()))
@@ -285,6 +286,7 @@ final class ClientAgent {
             presence.watch(address: welcome.keyboardAddress)
             if welcome.keyboardAddress != nil { mover.requestPermission() }
             link.send(.keyboardPresent(presence.isPresent))
+            link.send(.keyboardPaired(presence.isPaired))
             onStateChanged?()
         case let .keyboardCommand(command):
             log("keyboard: asked to \(command.action.rawValue) (\(command.strategy.rawValue))")

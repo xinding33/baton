@@ -7,11 +7,13 @@ public struct KeyboardCustody: Sendable {
     public private(set) var holder: String?
     private var claimNotBefore: UInt64?
     private var failedClaims = 0
+    /// The Mac that had the keyboard is gone, so a pairing any other Mac reports is out of date.
+    private var abandoned = false
 
     /// How long a Mac that vanished without a word may take to come back with the keyboard still
     /// attached, and how long to wait when it was never seen attached anywhere.
     public static let lostGrace: UInt64 = 10000
-    public static let unknownGrace: UInt64 = 5000
+    public static let unknownGrace: UInt64 = 3000
 
     public init() {}
 
@@ -20,6 +22,7 @@ public struct KeyboardCustody: Sendable {
         holder = owner
         claimNotBefore = nil
         failedClaims = 0
+        abandoned = false
     }
 
     /// A handoff began. Until the keyboard turns up somewhere, no Mac is known to hold its pairing.
@@ -32,14 +35,18 @@ public struct KeyboardCustody: Sendable {
     public mutating func departed(_ machine: String, saidGoodbye: Bool, now: UInt64) {
         guard holder == machine else { return }
         holder = nil
+        abandoned = true
         claimNotBefore = now + (saidGoodbye ? 0 : KeyboardCustody.lostGrace)
     }
 
     /// Whether a Mac should pair with the keyboard now, given that it is attached nowhere.
-    /// While the Mac it is paired with is connected, the keyboard is merely switched off or out
-    /// of range, and returns to that Mac by itself.
-    public mutating func shouldClaim(now: UInt64, online: Set<String>) -> Bool {
-        if let holder, online.contains(holder) { return false }
+    /// While a connected Mac still holds its pairing, the keyboard is merely switched off or out
+    /// of range, and returns to that Mac by itself. Once none does, it cannot come back unaided.
+    public mutating func shouldClaim(now: UInt64, pairedSomewhere: Bool) -> Bool {
+        if pairedSomewhere, !abandoned {
+            claimNotBefore = nil
+            return false
+        }
         let notBefore = claimNotBefore ?? now + KeyboardCustody.unknownGrace
         claimNotBefore = notBefore
         return now >= notBefore

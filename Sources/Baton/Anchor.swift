@@ -36,8 +36,8 @@ final class Anchor {
     private var motionSeq: UInt64 = 0
 
     // The shared keyboard and its handoff between machines.
-    private let presence = KeyboardPresence()
     private let mover = KeyboardMover()
+    private lazy var presence = KeyboardPresence(mover: mover)
     private var focusSince = Net.monotonicMillis()
     private var forwardedKeysDown: Set<UInt16> = []
     private var lastForwardedKeyAt: UInt64 = 0
@@ -412,7 +412,8 @@ final class Anchor {
         guard config.keyboardAddress != nil, handoffInProgress == nil, now >= handoffBlockedUntil else { return }
         guard let owner else {
             // Attached nowhere. Nothing typed can be lost, so a claim does not wait for a quiet moment.
-            if custody.shouldClaim(now: now, online: onlineMachines) {
+            let pairedSomewhere = presence.isPaired || server.peers.values.contains { $0.keyboardPaired }
+            if custody.shouldClaim(now: now, pairedSomewhere: pairedSomewhere) {
                 moveKeyboard(to: config.keyboardFollows ? focusName : config.name)
             }
             return
@@ -506,7 +507,8 @@ final class Anchor {
         }
         var report: [String: Any] = [
             "owner": keyboardOwner ?? "nowhere",
-            "pairedWith": custody.holder ?? "unknown",
+            "pairedWith": ([config.name: presence.isPaired].merging(server.peers.mapValues(\.keyboardPaired)) { a, _ in a })
+                .filter(\.value).keys.sorted(),
             "follows": config.keyboardFollows,
             "strategy": config.handoffStrategy.rawValue,
             "lastHandoff": lastHandoff,
