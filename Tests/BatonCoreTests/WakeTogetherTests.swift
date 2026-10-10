@@ -35,7 +35,7 @@ final class WakeTogetherTests: XCTestCase {
         mini.wakeOthers = false
         XCTAssertEqual(effects(mini.displayWoke(now: 1000, links: [studio])), [])
         // Wake All Macs is asked for, so the setting does not apply to it.
-        XCTAssertEqual(effects(mini.wakeAll(now: 2000, links: [studio])), [.send(WakeRequest(origin: "mini"), to: studio)])
+        XCTAssertEqual(effects(mini.wakeAll(now: 2000, links: [studio])), [.send(WakeRequest(origin: "mini", asked: true), to: studio)])
     }
 
     func testDisplayFlickeringOnTwiceWakesTheOthersOnce() {
@@ -172,6 +172,49 @@ final class WakeTogetherTests: XCTestCase {
         XCTAssertEqual(effects(studio.linksChanged(now: 3000, links: [again, mbp])), [.send(WakeRequest(origin: "mini"), to: mbp)])
     }
 
+    // MARK: Pause Sharing
+
+    func testAPausedAnchorWakesNobodyWhenItsDisplayWakes() {
+        var studio = anchor()
+        studio.paused = true
+        XCTAssertEqual(effects(studio.displayWoke(now: 1000, links: [mini, mbp])), [])
+        XCTAssertFalse(studio.hasPending(now: 1000))
+        studio.paused = false
+        XCTAssertEqual(effects(studio.displayWoke(now: 1200, links: [mini, mbp])).count, 2)
+    }
+
+    func testAPausedAnchorNeitherWakesNorPassesOnAClientsDisplayWake() {
+        var studio = anchor()
+        studio.paused = true
+        XCTAssertEqual(effects(studio.received(WakeRequest(origin: "mini"), from: "mini", now: 1000, links: [mini, mbp])), [])
+        XCTAssertFalse(studio.hasPending(now: 1000))
+        // Its own display waking is then no echo of the mini's, but it is paused all the same.
+        XCTAssertEqual(effects(studio.displayWoke(now: 1400, links: [mini, mbp])), [])
+    }
+
+    func testWakeAllMacsGoesThroughAPause() {
+        var studio = anchor()
+        studio.paused = true
+        let own = WakeRequest(origin: "studio", asked: true)
+        XCTAssertEqual(effects(studio.wakeAll(now: 1000, links: [mini, mbp])), [.send(own, to: mbp), .send(own, to: mini)])
+        // Chosen on a client, it reaches the anchor and the other client as asked for.
+        var client = client()
+        let request = WakeRequest(origin: "mini", asked: true)
+        XCTAssertEqual(effects(client.wakeAll(now: 2000, links: [self.studio])), [.send(request, to: self.studio)])
+        XCTAssertEqual(effects(studio.received(request, from: "mini", now: 2020, links: [mini, mbp])), [.wakeDisplay, .send(request, to: mbp)])
+    }
+
+    func testAWakeStillFreshWhenSharingIsPausedIsNotSentToALateArrival() {
+        var studio = anchor()
+        _ = studio.displayWoke(now: 1000, links: [mini])
+        studio.paused = true
+        XCTAssertEqual(studio.linksChanged(now: 3000, links: [mini, mbp]), [])
+        XCTAssertFalse(studio.hasPending(now: 3000))
+        // One that was asked for still is.
+        _ = studio.wakeAll(now: 4000, links: [mini])
+        XCTAssertEqual(effects(studio.linksChanged(now: 5000, links: [mini, mbp])), [.send(WakeRequest(origin: "studio", asked: true), to: mbp)])
+    }
+
     // MARK: Hotkey
 
     let controlOptionCommand = CGEventFlags([.maskControl, .maskAlternate, .maskCommand]).rawValue
@@ -240,5 +283,12 @@ final class WakeTogetherTests: XCTestCase {
         let frame = try Wire.encode(.wake(WakeRequest(origin: "mbp")))
         guard case let .wake(request) = try Wire.decode(frame.dropFirst(4)) else { return XCTFail("not a wake") }
         XCTAssertEqual(request, WakeRequest(origin: "mbp"))
+        let asked = try Wire.encode(.wake(WakeRequest(origin: "mbp", asked: true)))
+        guard case let .wake(chosen) = try Wire.decode(asked.dropFirst(4)) else { return XCTFail("not a wake") }
+        XCTAssertTrue(chosen.asked)
+    }
+
+    func testAWakeThatDoesNotSayIsADisplayWaking() throws {
+        XCTAssertEqual(try JSONDecoder().decode(WakeRequest.self, from: Data(#"{"origin": "mbp"}"#.utf8)), WakeRequest(origin: "mbp", asked: false))
     }
 }

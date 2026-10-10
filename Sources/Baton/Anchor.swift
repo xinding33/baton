@@ -54,6 +54,8 @@ final class Anchor {
     private let crossingLockoutMs: UInt64 = 150
 
     var onStateChanged: (() -> Void)?
+    /// Pause Sharing was switched. What pauses along with the cursor is told here.
+    var onPausedChanged: ((Bool) -> Void)?
 
     init(config: Config, secret: Data) {
         self.config = config
@@ -287,6 +289,7 @@ final class Anchor {
         paused = value
         if value { goLocal(at: nil) }
         log(value ? "paused" : "resumed")
+        onPausedChanged?(value)
         onStateChanged?()
     }
 

@@ -53,6 +53,26 @@ final class StayAwakeTests: XCTestCase {
         XCTAssertEqual(studio.received(from: "mini", links: [mini]), [.stayAwake])
     }
 
+    // MARK: Pause Sharing
+
+    func testAPausedAnchorDoesNotSayItIsInUse() {
+        var studio = StayAwakeCoordinator(role: .anchor)
+        XCTAssertTrue(studio.reportIsDue(now: 1000))
+        studio.paused = true
+        XCTAssertFalse(studio.reportIsDue(now: 1000 + 2 * every))
+        // Resumed, the next input is reported at once.
+        studio.paused = false
+        XCTAssertTrue(studio.reportIsDue(now: 1000 + 2 * every + 8))
+    }
+
+    func testAPausedAnchorNeitherCountsNorPassesOnAClientsUse() {
+        var studio = StayAwakeCoordinator(role: .anchor)
+        studio.paused = true
+        XCTAssertEqual(studio.received(from: "mini", links: [mini, mbp]), [])
+        studio.paused = false
+        XCTAssertEqual(studio.received(from: "mini", links: [mini, mbp]), [.stayAwake, .send(to: mbp)])
+    }
+
     // MARK: Whether to count it
 
     func conditions(enabled: Bool = true, onlyOnPower: Bool = true, onPowerAdapter: Bool = true, displayAsleep: Bool = false, locked: Bool = false) -> StayAwakeConditions {

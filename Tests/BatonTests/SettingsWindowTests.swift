@@ -253,6 +253,11 @@ final class SettingsWindowTests: XCTestCase {
         XCTAssertEqual(logged.first, "wake the others when this Mac wakes: false")
         rows = WakeTogether.rows(for: wake, holdingAwake: false, onPowerAdapter: true, change: change)
         XCTAssertEqual(rows.press("Only on power adapter"), "“Only on power adapter” is greyed out")
+        // Pause Sharing, on the anchor, is said above the switches it overrides.
+        XCTAssertFalse(rows.contains { $0.kind == .note(warning: false) })
+        rows = WakeTogether.rows(for: wake, holdingAwake: false, onPowerAdapter: true, sharingPaused: true, change: change)
+        XCTAssertEqual(rows.first?.kind, .note(warning: false))
+        XCTAssertTrue(rows.first?.title.contains("Wake All Macs still works") == true)
     }
 
     /// The whole window as an anchor has it, a picture for each pane. `BATON_SNAPSHOTS` keeps them.

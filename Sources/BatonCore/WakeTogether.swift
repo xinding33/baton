@@ -5,8 +5,17 @@ import Foundation
 public struct WakeRequest: Codable, Equatable, Sendable {
     /// The machine whose display woke, or where Wake All Macs was chosen.
     public var origin: String
-    public init(origin: String) {
+    /// Wake All Macs was chosen. A wake someone asked for goes through while sharing is paused.
+    public var asked: Bool
+    public init(origin: String, asked: Bool = false) {
         self.origin = origin
+        self.asked = asked
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        origin = try c.decode(String.self, forKey: .origin)
+        asked = try c.decodeIfPresent(Bool.self, forKey: .asked) ?? false
     }
 }
 
@@ -167,6 +176,9 @@ public struct WakeCoordinator {
     public let name: String
     public let role: Role
     public var wakeOthers = true
+    /// Anchor only: Pause Sharing is on. A display that wakes then wakes no other Mac, here or
+    /// from a client. Wake All Macs is asked for, so it still does.
+    public var paused = false
 
     private var ignoreDisplayWakeUntil: UInt64 = 0
     private var lastAutoWakeAt: UInt64?
@@ -180,6 +192,7 @@ public struct WakeCoordinator {
     /// This Mac's display woke.
     public mutating func displayWoke(now: UInt64, links: [WakeLink]) -> [Action] {
         if !wakeOthers { return [.log("display woke; waking the others is switched off")] }
+        if paused { return [.log("display woke; sharing is paused")] }
         if now < ignoreDisplayWakeUntil { return [.log("display woke, as another Mac asked; not passing it on")] }
         if let last = lastAutoWakeAt, now >= last, now - last < Self.minIntervalMs {
             return [.log("display woke again; the others were woken a moment ago")]
@@ -190,7 +203,7 @@ public struct WakeCoordinator {
 
     /// Wake All Macs was chosen on this Mac.
     public mutating func wakeAll(now: UInt64, links: [WakeLink]) -> [Action] {
-        return offer(WakeRequest(origin: name), skipping: [], now: now, links: links, what: "wake all")
+        return offer(WakeRequest(origin: name, asked: true), skipping: [], now: now, links: links, what: "wake all")
     }
 
     /// A wake request arrived from the machine called `sender`.
@@ -199,6 +212,7 @@ public struct WakeCoordinator {
         // A client speaks for itself only; what the anchor passes on names where it began.
         if role == .anchor { request.origin = sender }
         guard request.origin != name else { return [] }
+        if paused, !request.asked { return [.log("\(request.origin)'s display woke; sharing is paused")] }
         ignoreDisplayWakeUntil = now + Self.echoWindowMs
         var actions: [Action] = [.wakeDisplay, .log("woken by \(request.origin)")]
         if role == .anchor {
@@ -213,6 +227,11 @@ public struct WakeCoordinator {
     public mutating func linksChanged(now: UInt64, links: [WakeLink]) -> [Action] {
         guard let current = pending else { return [] }
         guard now <= current.until else {
+            pending = nil
+            return []
+        }
+        // Sharing was paused while the wake was fresh.
+        if paused, !current.request.asked {
             pending = nil
             return []
         }

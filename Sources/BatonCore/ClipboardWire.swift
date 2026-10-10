@@ -38,10 +38,20 @@ public struct ClipboardHello: Codable, Equatable, Sendable {
 public struct ClipboardSettings: Codable, Equatable, Sendable {
     public var enabled: Bool
     public var maxBytes: Int
+    /// Pause Sharing is on on the anchor: sharing stays switched on, and waits.
+    public var paused: Bool
 
-    public init(enabled: Bool, maxBytes: Int) {
+    public init(enabled: Bool, maxBytes: Int, paused: Bool = false) {
         self.enabled = enabled
         self.maxBytes = maxBytes
+        self.paused = paused
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        enabled = try c.decode(Bool.self, forKey: .enabled)
+        maxBytes = try c.decode(Int.self, forKey: .maxBytes)
+        paused = try c.decodeIfPresent(Bool.self, forKey: .paused) ?? false
     }
 }
 

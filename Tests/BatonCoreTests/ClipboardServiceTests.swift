@@ -432,6 +432,82 @@ final class ClipboardServiceTests: XCTestCase {
         lock.unlock()
     }
 
+    func testPauseSharingStopsEveryMacAndLeavesTheSettingOn() {
+        start()
+        var saved: [Bool] = []
+        let lock = NSLock()
+        studio.service.onEnabledChanged = { value in
+            lock.lock()
+            saved.append(value)
+            lock.unlock()
+        }
+        mini.board.copy("before the pause")
+        wait("the text on the others") { studio.board.text == "before the pause" && mbp.board.text == "before the pause" }
+        let reads = [studio, mini, mbp].map { $0!.board.readCount }
+
+        studio.service.setPaused(true)
+        wait("everyone to pause") { [studio, mini, mbp].allSatisfy { $0!.service.status.paused } }
+        XCTAssertTrue([studio, mini, mbp].allSatisfy { $0!.service.status.enabled })
+        studio.board.copy("on the studio, while paused")
+        mbp.board.copy("on the mbp, while paused")
+        settle()
+        XCTAssertEqual(mini.board.text, "before the pause")
+        XCTAssertEqual(studio.board.text, "on the studio, while paused")
+        XCTAssertEqual(mbp.board.text, "on the mbp, while paused")
+        XCTAssertEqual([studio, mini, mbp].map { $0!.board.readCount }, reads, "nothing is read while paused")
+
+        studio.service.setPaused(false)
+        wait("everyone to resume") { [studio, mini, mbp].allSatisfy { !$0!.service.status.paused } }
+        settle(0.1)
+        // What was copied during the pause stays where it is.
+        XCTAssertEqual(mini.board.text, "before the pause")
+        XCTAssertEqual(studio.board.text, "on the studio, while paused")
+        mini.board.copy("after the pause")
+        wait("the text on the others") { studio.board.text == "after the pause" && mbp.board.text == "after the pause" }
+        lock.lock()
+        XCTAssertEqual(saved, [], "a pause is not the setting")
+        lock.unlock()
+        XCTAssertTrue(mbp.log.contains("sharing paused") && mbp.log.contains("sharing resumed"))
+    }
+
+    func testAMacThatJoinsDuringAPauseWaitsForItToEnd() {
+        start(clients: false)
+        join(mini)
+        studio.board.copy("copied before the pause")
+        wait("the text on the mini") { mini.board.text == "copied before the pause" }
+        studio.service.setPaused(true)
+        wait("the pause") { studio.service.status.paused && mini.service.status.paused }
+        join(mbp)
+        wait("the mbp to hear of the pause") { mbp.service.status.paused }
+        mbp.board.copy("on the mbp, while paused")
+        settle()
+        XCTAssertEqual(mbp.board.text, "on the mbp, while paused")
+        XCTAssertEqual(studio.board.text, "copied before the pause")
+
+        // Reconnecting after the pause does not bring out what was copied during it.
+        studio.service.setPaused(false)
+        wait("the resume") { !mbp.service.status.paused }
+        mbp.service.disconnect()
+        wait("the mbp to leave") { !studio.service.status.peers.contains("mbp") }
+        join(mbp)
+        settle()
+        XCTAssertEqual(studio.board.text, "copied before the pause")
+        XCTAssertEqual(mbp.board.text, "on the mbp, while paused")
+    }
+
+    func testSharingSwitchedOffStaysOffThroughAPause() {
+        start(enabled: false)
+        studio.service.setPaused(true)
+        wait("the pause") { studio.service.status.paused && mini.service.status.paused }
+        studio.service.setPaused(false)
+        wait("the resume") { !studio.service.status.paused && !mini.service.status.paused }
+        mini.board.copy("nothing happens")
+        settle()
+        XCTAssertNil(studio.board.text)
+        XCTAssertFalse(mini.service.status.enabled)
+        XCTAssertEqual(mini.board.readCount, 0)
+    }
+
     func testAnAnchorWithSharingOffTellsItsClients() {
         start(enabled: false)
         XCTAssertFalse(studio.service.status.enabled)

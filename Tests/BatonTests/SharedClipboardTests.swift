@@ -85,6 +85,24 @@ final class SharedClipboardTests: XCTestCase {
         XCTAssertEqual(anchor.command(["on"]), "sharing the clipboard: on")
         wait("sharing to switch on") { self.controls(client)[0].isOn == true && saved == [false, true] }
 
+        // Pause Sharing on the anchor: both panes say so, and the switch stays as it is.
+        XCTAssertFalse(client.settingsPane.rows.contains { $0.kind == .note(warning: false) })
+        anchor.setPaused(true)
+        wait("the pause on the client") { self.status(client)["paused"] as? Bool == true }
+        XCTAssertEqual(status(anchor)["paused"] as? Bool, true)
+        XCTAssertEqual(controls(anchor)[0].isOn, true)
+        XCTAssertEqual(controls(client)[0].isOn, true)
+        XCTAssertTrue(anchor.settingsPane.rows.first { $0.kind == .note(warning: false) }?.title.hasPrefix("Sharing is paused, in Baton’s menu.") == true)
+        XCTAssertTrue(client.settingsPane.rows.first { $0.kind == .note(warning: false) }?.title.hasPrefix("Sharing is paused, in the menu of the anchor’s Baton.") == true)
+        here.clearContents()
+        here.setString("kept here", forType: .string)
+        RunLoop.current.run(until: Date().addingTimeInterval(0.3))
+        XCTAssertEqual(there.string(forType: .string), "and back")
+        anchor.setPaused(false)
+        wait("the resume on the client") { self.status(client)["paused"] as? Bool == false }
+        XCTAssertFalse(anchor.settingsPane.rows.contains { $0.kind == .note(warning: false) })
+        XCTAssertEqual(saved, [false, true], "a pause is not the setting")
+
         // The input link went away: the clipboard's connection goes with it.
         client.anchorChanged(nil)
         wait("the client to leave") { (self.status(anchor)["peers"] as? [String]) == [] }

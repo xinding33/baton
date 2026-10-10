@@ -51,6 +51,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             keyboard?.onStateChanged = { [weak self] in self?.refreshMenu() }
             WakeTogether.shared.start(as: config, links: anchor.server)
             clipboard.onSettingChanged = { [weak anchor] in anchor?.setShareClipboard($0) }
+            anchor.onPausedChanged = { [weak clipboard] paused in
+                WakeTogether.shared.setPaused(paused)
+                clipboard?.setPaused(paused)
+            }
         case .client:
             let client = ClientAgent(config: config, secret: secret)
             client.onStateChanged = { [weak self] in self?.refreshMenu() }

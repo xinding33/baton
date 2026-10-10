@@ -158,6 +158,8 @@ final class ClipboardLink {
 public final class ClipboardService {
     public struct Status: Sendable {
         public var enabled = false
+        /// Pause Sharing is on on the anchor: no copy is sent or taken until it is resumed.
+        public var paused = false
         public var access = ClipboardAccess.allowed
         /// Anchor: the port being listened on.
         public var port: UInt16?
@@ -186,6 +188,9 @@ public final class ClipboardService {
 
     private var register: ClipboardRegister
     private var enabled = false
+    private var paused = false
+    /// Copies are watched for, sent and taken only while this holds.
+    private var sharing: Bool { enabled && !paused }
     private let initiallyEnabled: Bool
     private var maxBytes: Int
     private var timer: DispatchSourceTimer?
@@ -292,20 +297,43 @@ public final class ClipboardService {
 
     private func changeEnabled(_ value: Bool) {
         guard value != enabled else { return }
-        apply(enabled: value)
+        apply(enabled: value, paused: paused)
         for peer in peers.values { peer.send(.settings(settings)) }
         advise()
         onEnabledChanged?(value)
     }
 
-    private var settings: ClipboardSettings { ClipboardSettings(enabled: enabled, maxBytes: maxBytes) }
+    /// Anchor only: Pause Sharing was switched. Until it is resumed every Mac keeps its copies
+    /// to itself, and the setting stays as it is.
+    public func setPaused(_ value: Bool) {
+        queue.async {
+            guard self.isHub, value != self.paused else { return }
+            self.apply(enabled: self.enabled, paused: value)
+            for peer in self.peers.values { peer.send(.settings(self.settings)) }
+        }
+    }
 
-    private func apply(enabled value: Bool) {
-        guard value != enabled else { return }
+    private var settings: ClipboardSettings { ClipboardSettings(enabled: enabled, maxBytes: maxBytes, paused: paused) }
+
+    private func apply(enabled value: Bool, paused pause: Bool) {
+        guard value != enabled || pause != paused else { return }
+        let wasSharing = sharing
+        if value != enabled { log(value ? "sharing on" : "sharing off") }
+        if pause != paused, value { log(pause ? "sharing paused" : "sharing resumed") }
         enabled = value
+        paused = pause
+        update(notify: true) {
+            $0.enabled = value
+            $0.paused = pause
+            $0.access = self.board.access
+        }
+        // A Mac that joins during a pause has watched nothing yet. This is what it later tells
+        // a copy made during the pause by.
+        if !sharing, lastCount == nil { lastCount = board.changeCount }
+        guard sharing != wasSharing else { return }
         timer?.cancel()
         timer = nil
-        if value {
+        if sharing {
             // What was copied while nobody was watching is of unknown age: it is not sent, but
             // an older copy from elsewhere must not replace it either.
             let count = board.changeCount
@@ -318,11 +346,6 @@ public final class ClipboardService {
             timer.setEventHandler { [weak self] in self?.poll() }
             timer.resume()
             self.timer = timer
-        }
-        log(value ? "sharing on" : "sharing off")
-        update(notify: true) {
-            $0.enabled = value
-            $0.access = self.board.access
         }
     }
 
@@ -404,7 +427,7 @@ public final class ClipboardService {
     // MARK: Copies made elsewhere
 
     private func received(_ content: ClipboardContent, from sender: String, on link: ClipboardLink) {
-        guard enabled else { return }
+        guard sharing else { return }
         // A copy made here since the last look is dealt with first: it is the newer of the two,
         // and writing over it unseen would lose it.
         poll()
@@ -426,7 +449,7 @@ public final class ClipboardService {
 
     /// Once both sides have said what they hold, the one that is ahead sends its copy.
     private func catchUp(_ link: ClipboardLink, with hello: ClipboardHello) {
-        guard enabled, let current = register.current else { return }
+        guard sharing, let current = register.current else { return }
         if let have = hello.have, have >= current.stamp { return }
         link.send(current)
     }
@@ -489,7 +512,7 @@ public final class ClipboardService {
     public func listen(on port: NWEndpoint.Port, using parameters: NWParameters) {
         queue.async {
             self.listening = (port, parameters)
-            self.apply(enabled: self.initiallyEnabled)
+            self.apply(enabled: self.initiallyEnabled, paused: self.paused)
             self.startListener()
         }
     }
@@ -615,7 +638,7 @@ public final class ClipboardService {
             case let .settings(settings):
                 self.maxBytes = settings.maxBytes
                 self.update { $0.maxBytes = settings.maxBytes }
-                self.apply(enabled: settings.enabled)
+                self.apply(enabled: settings.enabled, paused: settings.paused)
             case let .hello(hello):
                 guard hello.version == clipboardProtocolVersion, link.peer == nil else { return link.close("bad hello") }
                 link.peer = hello

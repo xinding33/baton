@@ -15,6 +15,9 @@ public struct StayAwakeCoordinator {
     public static let reportEveryMs: UInt64 = 10000
 
     public let role: Role
+    /// Anchor only: Pause Sharing is on. The anchor then neither says that it is in use nor
+    /// counts or passes on what a client says, so each Mac is left to its own timers.
+    public var paused = false
     private var lastReportAt: UInt64?
 
     public init(role: Role) {
@@ -24,6 +27,7 @@ public struct StayAwakeCoordinator {
     /// Whether input seen on this Mac at `now` is to be reported to the others. True once per
     /// `reportEveryMs`, so it can be asked for every event.
     public mutating func reportIsDue(now: UInt64) -> Bool {
+        if paused { return false }
         if let last = lastReportAt, now >= last, now - last < Self.reportEveryMs { return false }
         lastReportAt = now
         return true
@@ -31,6 +35,7 @@ public struct StayAwakeCoordinator {
 
     /// The machine called `sender` says it is in use.
     public func received(from sender: String, links: [WakeLink]) -> [Action] {
+        if paused { return [] }
         // To the other clients, and never back to the one it came from.
         let others = role == .anchor ? links.filter { $0.name != sender }.sorted { $0.name < $1.name } : []
         return [.stayAwake] + others.map { .send(to: $0) }
