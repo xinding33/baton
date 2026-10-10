@@ -20,7 +20,8 @@ final class UpdatesTests: XCTestCase {
         try? FileManager.default.removeItem(at: home)
     }
 
-    private func wait(_ what: String, timeout: TimeInterval = 10, until condition: () -> Bool) {
+    /// Long enough for a listener that found its port taken to try again.
+    private func wait(_ what: String, timeout: TimeInterval = 25, until condition: () -> Bool) {
         let deadline = Date().addingTimeInterval(timeout)
         while !condition() {
             guard Date() < deadline else { return XCTFail("timed out waiting for \(what)") }
@@ -41,7 +42,8 @@ final class UpdatesTests: XCTestCase {
     /// An anchor and a client on this Mac, each with its own updater and nothing else.
     private func pair(anchor: Build, client: Build) -> (anchor: Updates, client: Updates) {
         var anchorConfig = Config(name: "studio", role: .anchor)
-        anchorConfig.port = UInt16.random(in: 40000..<60000)
+        // Below the range outgoing connections take their ports from, which other tests fill.
+        anchorConfig.port = UInt16.random(in: 20000..<40000)
         var clientConfig = Config(name: "mini", role: .client)
         clientConfig.port = anchorConfig.port
         clientConfig.anchorHost = "127.0.0.1"
