@@ -29,9 +29,9 @@ public struct ScrollSettings: Codable, Equatable, Sendable {
         return ScrollAxes(vertical: vertical, horizontal: horizontal)
     }
 
-    /// What the menu says when the wheel is not being reversed the way the checkmarks suggest.
+    /// What Settings says when the wheel is not being reversed the way the ticks suggest.
     public func note(tapActive: Bool) -> String? {
-        enabled && !tapActive ? "Needs Accessibility to reverse a mouse plugged into this Mac" : nil
+        enabled && !tapActive ? "Needs Accessibility to reverse a mouse plugged into this Mac." : nil
     }
 }
 

@@ -37,7 +37,7 @@ final class ClientAgent {
     private var localReports = 0
 
     var onStateChanged: (() -> Void)?
-    /// This Mac's external displays, passed on to the anchor's menu.
+    /// This Mac's external displays, passed on to the anchor's Settings.
     var displayPanel: DisplayPanel? {
         didSet { if connected, let displayPanel { link?.send(.displayPanel(displayPanel)) } }
     }

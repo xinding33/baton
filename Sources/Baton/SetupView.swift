@@ -1,7 +1,8 @@
 import AppKit
 import BatonCore
 
-/// Everything the setup and settings window shows. `SetupWindowController` fills it in from
+/// Everything the setup form shows, which is the General pane of Settings once Baton is set
+/// up. `SetupWindowController` fills it in from
 /// this Mac; a test or a snapshot can fill it in by hand.
 struct SetupState: Equatable {
     enum Mode: Equatable {
@@ -27,16 +28,14 @@ struct SetupState: Equatable {
     var codeProblem: String?
     var codeNote: String?
 
-    /// The choices for the shared keyboard, or nil where there is no choice to make.
-    var keyboards: [KeyboardChoices.Entry]?
-    var keyboardAddress: String?
-    var keyboardNote = ""
-
     var permissions: [PermissionRow] = []
 
-    /// First run only; afterwards Open at Login is in the menu.
+    /// On the first run this is part of what Start writes; afterwards it is the switch itself.
     var openAtLogin = true
+    var loginEnabled = true
     var loginNote: String?
+    /// Settings only: whether Baton has its item in the menu bar.
+    var showsMenuIcon = true
 
     var actionTitle = "Start Baton"
     var actionEnabled = true
@@ -45,8 +44,8 @@ struct SetupState: Equatable {
     var cancelTitle = "Quit"
 }
 
-/// The contents of the setup and settings window: what this Mac is called, whether it has the
-/// mouse, the pairing code, the shared keyboard and the permissions Baton still needs.
+/// The setup form: what this Mac is called, whether it has the mouse, the pairing code, the
+/// permissions Baton still needs, and how Baton starts and shows itself here.
 final class SetupView: NSView, NSTextFieldDelegate {
     enum Edit: Equatable {
         case name(String)
@@ -54,8 +53,8 @@ final class SetupView: NSView, NSTextFieldDelegate {
         case code(String)
         case generateCode
         case copyCode
-        case keyboard(String?)
         case openAtLogin(Bool)
+        case showMenuIcon(Bool)
         case permission(PermissionKind)
         case apply
         case cancel
@@ -85,12 +84,11 @@ final class SetupView: NSView, NSTextFieldDelegate {
     private lazy var copyButton = NSButton(title: "Copy", target: self, action: #selector(copyCode))
     private let codeProblem = SetupView.paragraph(color: .systemRed)
     private let codeNote = SetupView.paragraph(color: .secondaryLabelColor)
-    private let keyboardHeader = SetupView.header("Shared keyboard")
-    private let keyboardPopup = NSPopUpButton(frame: .zero, pullsDown: false)
-    private let keyboardNote = SetupView.paragraph(color: .secondaryLabelColor)
     private let permissionRows = NSStackView()
-    private lazy var loginCheckbox = NSButton(checkboxWithTitle: "Open Baton at login", target: self, action: #selector(loginToggled))
+    private lazy var loginCheckbox = NSButton(checkboxWithTitle: "Open at Login", target: self, action: #selector(loginToggled))
     private let loginNote = SetupView.paragraph(color: .secondaryLabelColor)
+    private lazy var iconCheckbox = NSButton(checkboxWithTitle: "Show in the menu bar", target: self, action: #selector(iconToggled))
+    private let iconNote = SetupView.paragraph("Without its menu bar item, open Baton again to get back to these settings.", color: .secondaryLabelColor)
     private let actionNote = SetupView.paragraph(color: .secondaryLabelColor)
     private lazy var cancelButton = NSButton(title: "Quit", target: self, action: #selector(cancel))
     private lazy var actionButton = NSButton(title: "Start Baton", target: self, action: #selector(act))
@@ -159,10 +157,6 @@ final class SetupView: NSView, NSTextFieldDelegate {
         codeField.placeholderString = "five groups of five letters and digits"
         codeField.widthAnchor.constraint(equalToConstant: 330).isActive = true
 
-        keyboardPopup.target = self
-        keyboardPopup.action = #selector(keyboardChosen)
-        keyboardPopup.widthAnchor.constraint(equalToConstant: 400).isActive = true
-
         permissionRows.orientation = .vertical
         permissionRows.alignment = .leading
         permissionRows.spacing = 12
@@ -174,7 +168,7 @@ final class SetupView: NSView, NSTextFieldDelegate {
         let filler = NSView()
         filler.setContentHuggingPriority(.defaultLow, for: .horizontal)
         actionButton.keyEquivalent = "\r"
-        let buttons = SetupView.row([loginCheckbox, filler, cancelButton, actionButton])
+        let buttons = SetupView.row([filler, cancelButton, actionButton])
         buttons.widthAnchor.constraint(equalToConstant: SetupView.contentWidth).isActive = true
 
         let codeHint = SetupView.paragraph(
@@ -186,9 +180,9 @@ final class SetupView: NSView, NSTextFieldDelegate {
             [status],
             [SetupView.header("This Mac"), SetupView.row([nameLabel, nameField]), nameProblem, nameNote, anchorChoice, clientChoice, roleNote],
             [SetupView.header("Pairing code"), SetupView.row([codeField, generateButton, copyButton]), codeProblem, codeNote, codeHint],
-            [keyboardHeader, keyboardPopup, keyboardNote],
             [SetupView.header("Permissions"), permissionRows],
-            [separator, actionNote, buttons, loginNote],
+            [SetupView.header("Baton"), loginCheckbox, loginNote, iconCheckbox, iconNote],
+            [separator, actionNote, buttons],
         ]
         for section in sections {
             for view in section { stack.addArrangedSubview(view) }
@@ -264,30 +258,18 @@ final class SetupView: NSView, NSTextFieldDelegate {
         set(codeNote, new.codeProblem == nil ? new.codeNote : nil)
         copyButton.isEnabled = PairingCode.problem(with: new.code) == nil
 
-        let keyboards = new.keyboards
-        for view in [keyboardHeader, keyboardPopup, keyboardNote] { view.isHidden = keyboards == nil }
-        if let keyboards {
-            if keyboards != old.keyboards || !built {
-                keyboardPopup.removeAllItems()
-                for entry in keyboards {
-                    let item = NSMenuItem(title: entry.title, action: nil, keyEquivalent: "")
-                    item.representedObject = entry.address
-                    keyboardPopup.menu?.addItem(item)
-                }
-            }
-            keyboardPopup.selectItem(at: keyboards.firstIndex { $0.address == new.keyboardAddress } ?? 0)
-            keyboardNote.stringValue = new.keyboardNote
-        }
-
         if new.permissions != old.permissions || !built {
             permissionRows.arrangedSubviews.forEach { $0.removeFromSuperview() }
             new.permissions.map(permissionView).forEach(permissionRows.addArrangedSubview)
         }
 
-        loginCheckbox.isHidden = new.mode != .firstRun
         loginCheckbox.state = new.openAtLogin ? .on : .off
-        loginCheckbox.isEnabled = new.loginNote == nil
-        set(loginNote, new.mode == .firstRun ? new.loginNote : nil)
+        loginCheckbox.isEnabled = new.loginEnabled
+        set(loginNote, new.loginNote)
+        // Until Baton is set up it has no menu bar item to show or hide.
+        iconCheckbox.isHidden = new.mode == .firstRun
+        iconCheckbox.state = new.showsMenuIcon ? .on : .off
+        iconNote.isHidden = new.mode == .firstRun || new.showsMenuIcon
         set(actionNote, new.actionNote)
         actionNote.textColor = new.actionFailed ? .systemRed : .secondaryLabelColor
         actionButton.title = new.actionTitle
@@ -313,8 +295,8 @@ final class SetupView: NSView, NSTextFieldDelegate {
     @objc private func roleChosen(_ sender: NSButton) { onEdit?(.role(sender === anchorChoice ? .anchor : .client)) }
     @objc private func generate() { onEdit?(.generateCode) }
     @objc private func copyCode() { onEdit?(.copyCode) }
-    @objc private func keyboardChosen() { onEdit?(.keyboard(keyboardPopup.selectedItem?.representedObject as? String)) }
     @objc private func loginToggled() { onEdit?(.openAtLogin(loginCheckbox.state == .on)) }
+    @objc private func iconToggled() { onEdit?(.showMenuIcon(iconCheckbox.state == .on)) }
     @objc private func act() { onEdit?(.apply) }
     @objc private func cancel() { onEdit?(.cancel) }
     @objc private func permissionAction(_ sender: NSButton) {
@@ -323,15 +305,6 @@ final class SetupView: NSView, NSTextFieldDelegate {
     }
 
     // MARK: Pictures
-
-    /// Renders the view to a PNG, for checking its appearance without opening the window.
-    func writeSnapshot(to url: URL) -> Bool {
-        layoutSubtreeIfNeeded()
-        guard let bitmap = bitmapImageRepForCachingDisplay(in: bounds) else { return false }
-        cacheDisplay(in: bounds, to: bitmap)
-        guard let data = bitmap.representation(using: .png, properties: [:]) else { return false }
-        return (try? data.write(to: url)) != nil
-    }
 
     /// Renders `state` as the window would show it, in a window that is never put on screen.
     static func writeSnapshot(of state: SetupState, to url: URL) -> Bool {
@@ -345,16 +318,15 @@ final class SetupView: NSView, NSTextFieldDelegate {
     }
 }
 
-/// A tinted box for the one thing at the top of the window that must not be overlooked.
-private final class NoteView: NSView {
+/// A tinted box for the one thing in a pane that must not be overlooked.
+final class NoteView: NSView {
     enum Tone { case plain, warning }
 
     private let label = NSTextField(wrappingLabelWithString: "")
     private var tone = Tone.plain
 
-    init() {
+    init(width: CGFloat = SetupView.width - 2 * 24) {
         super.init(frame: .zero)
-        let width = SetupView.width - 2 * 24
         label.font = .systemFont(ofSize: 12)
         label.isSelectable = true
         label.preferredMaxLayoutWidth = width - 24

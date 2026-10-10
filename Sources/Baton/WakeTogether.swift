@@ -36,7 +36,7 @@ final class WakeTogether: NSObject {
     /// before version 1.1.
     private static let rippleDomains = ["io.github.xinding33.ripple", "com.xinding.Ripple"]
 
-    /// A setting or something the menu shows has changed.
+    /// A setting or something Settings shows has changed.
     var onStateChanged: (() -> Void)?
     private var coordinator: WakeCoordinator?
     private var settings = WakeSettings()
@@ -147,7 +147,8 @@ final class WakeTogether: NSObject {
         run { $0.displayWoke(now: $1, links: $2) }
     }
 
-    @objc private func wakeAll() {
+    /// Wake All Macs, from the menu or the hotkey.
+    func wakeAll() {
         run { $0.wakeAll(now: $1, links: $2) }
     }
 
@@ -210,41 +211,43 @@ final class WakeTogether: NSObject {
         date.map { "\(Int(-$0.timeIntervalSinceNow)) s ago" } ?? "never"
     }
 
-    // MARK: Menu and control
+    // MARK: Settings, menu and control
 
-    func addMenuItems(to menu: NSMenu) {
-        guard coordinator != nil else { return }
-        menu.addItem(.separator())
-        func add(_ title: String, _ action: Selector, on: Bool? = nil, enabled: Bool = true) -> NSMenuItem {
-            // Without an action the item is greyed out but still shows its setting.
-            let item = menu.addItem(withTitle: title, action: enabled ? action : nil, keyEquivalent: "")
-            item.target = self
-            if let on { item.state = on ? .on : .off }
-            return item
-        }
-        _ = add("Wake All Macs" + (settings.hotKey.map { " (\($0.display))" } ?? ""), #selector(wakeAll))
-        _ = add("Wake Others When This Mac Wakes", #selector(toggleWakeOthers), on: settings.wakeOthers)
-        let paused = settings.keepAwake && !keepAwake.isHolding
-        _ = add("Keep This Mac Awake" + (paused ? " (paused on battery)" : ""), #selector(toggleKeepAwake), on: settings.keepAwake)
-        let waiting = settings.stayAwakeWithOthers && settings.keepAwakeOnlyOnPower && !KeepAwake.onPowerAdapter
-        _ = add("Stay Awake While Another Mac Is in Use" + (waiting ? " (paused on battery)" : ""), #selector(toggleStayAwake), on: settings.stayAwakeWithOthers)
-        add("Only on Power Adapter", #selector(toggleOnlyOnPower), on: settings.keepAwakeOnlyOnPower, enabled: settings.keepAwake || settings.stayAwakeWithOthers).indentationLevel = 1
+    /// Whether the menu can offer Wake All Macs, and the hotkey that does the same.
+    var canWakeAll: Bool { coordinator != nil }
+    var hotKeyDisplay: String? { settings.hotKey?.display }
+
+    /// The Sleep & Wake pane of Settings.
+    private(set) lazy var settingsPane = FormPane(id: StatusMenu.Pane.wake, title: "Sleep & Wake", symbol: "moon") { [unowned self] in
+        guard self.coordinator != nil else { return [.text("Waking together has not started on this Mac.")] }
+        return WakeTogether.rows(for: self.settings, holdingAwake: self.keepAwake.isHolding, onPowerAdapter: KeepAwake.onPowerAdapter) { [unowned self] in self.change($0, $1) }
     }
 
-    @objc private func toggleWakeOthers() {
-        change("wake the others when this Mac wakes: \(!settings.wakeOthers)") { $0.wakeOthers.toggle() }
-    }
-
-    @objc private func toggleKeepAwake() {
-        change("keep this Mac awake: \(!settings.keepAwake)") { $0.keepAwake.toggle() }
-    }
-
-    @objc private func toggleStayAwake() {
-        change("stay awake while another Mac is in use: \(!settings.stayAwakeWithOthers)") { $0.stayAwakeWithOthers.toggle() }
-    }
-
-    @objc private func toggleOnlyOnPower() {
-        change("keep awake only on power adapter: \(!settings.keepAwakeOnlyOnPower)") { $0.keepAwakeOnlyOnPower.toggle() }
+    /// The pane's rows for `settings`. `change` is handed a line for the log and what a click alters.
+    static func rows(for settings: WakeSettings, holdingAwake: Bool, onPowerAdapter: Bool, change: @escaping (String, (inout WakeSettings) -> Void) -> Void) -> [SettingsRow] {
+        let paused = settings.keepAwake && !holdingAwake
+        let waiting = settings.stayAwakeWithOthers && settings.keepAwakeOnlyOnPower && !onPowerAdapter
+        return [
+            .header("Waking"),
+            .toggle("Wake the other Macs when this Mac wakes", on: settings.wakeOthers,
+                    detail: "Wake All Macs, in Baton’s menu\(settings.hotKey.map { " or with \($0.display)" } ?? ""), wakes them whenever you ask.") { on in
+                change("wake the others when this Mac wakes: \(on)") { $0.wakeOthers = on }
+            },
+            .header("Staying awake"),
+            .toggle("Keep this Mac awake" + (paused ? " (paused on battery)" : ""), on: settings.keepAwake,
+                    detail: "Holds off idle sleep, so that this Mac stays in reach and can be woken. Its display still sleeps on schedule.") { on in
+                change("keep this Mac awake: \(on)") { $0.keepAwake = on }
+            },
+            .toggle("Stay awake while another Mac is in use" + (waiting ? " (paused on battery)" : ""), on: settings.stayAwakeWithOthers,
+                    detail: "Keeps this Mac’s display on while you are working at one of the others.") { on in
+                change("stay awake while another Mac is in use: \(on)") { $0.stayAwakeWithOthers = on }
+            },
+            // Greyed out but still showing its setting while neither of the two above is on.
+            .toggle("Only on power adapter", on: settings.keepAwakeOnlyOnPower, enabled: settings.keepAwake || settings.stayAwakeWithOthers, indent: 1) { on in
+                change("keep awake only on power adapter: \(on)") { $0.keepAwakeOnlyOnPower = on }
+            },
+            .text("For this Mac only. Each Mac has its own switches."),
+        ]
     }
 
     /// `ctl wake`: shows the state. `all` wakes every Mac; the rest change this Mac's settings.

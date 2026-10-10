@@ -185,7 +185,7 @@ public enum Message: Codable, Sendable {
     case sleeping
     /// Client to anchor: whether the client still holds a pairing with the shared keyboard.
     case keyboardPaired(Bool)
-    /// Client to anchor: the client's external displays, for the anchor's menu.
+    /// Client to anchor: the client's external displays, for the anchor's Settings.
     case displayPanel(DisplayPanel)
     /// Anchor to client: turn one of the client's displays off or on.
     case displayAction(DisplayAction)

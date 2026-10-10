@@ -97,7 +97,7 @@ enum Relaunch {
     }
 }
 
-/// Keeps Baton up to date from its GitHub releases, on every Mac at once: the menu items, the
+/// Keeps Baton up to date from its GitHub releases, on every Mac at once: the Updates pane, the
 /// daily check, the update link between the Macs, and the restart. Who downloads what and when
 /// everyone restarts is decided by `UpdateLeader` on the anchor (BatonCore); the clients follow.
 ///
@@ -131,7 +131,7 @@ final class Updates: NSObject {
         var conditions = RestartConditions.idle
     }
 
-    /// Something the menu shows has changed.
+    /// Something the menu or Settings shows has changed.
     var onStateChanged: (() -> Void)?
     var harness: Harness?
 
@@ -623,12 +623,11 @@ final class Updates: NSObject {
         alert.runModal()
     }
 
-    // MARK: The menu
+    // MARK: Settings and the menu
 
-    private var activity: String? {
-        if checking { return "Checking for Updates…" }
-        return leader?.activity ?? ownActivity ?? anchorState?.activity
-    }
+    /// What is being downloaded or installed, on this Mac or for all of them.
+    private var progress: String? { leader?.activity ?? ownActivity ?? anchorState?.activity }
+    private var activity: String? { checking ? "Checking for Updates…" : progress }
 
     private var isAutomatic: Bool {
         guard build.kind == .release else { return false }
@@ -654,27 +653,34 @@ final class Updates: NSObject {
         onStateChanged?()
     }
 
-    func addMenuItems(to menu: NSMenu) {
-        menu.addItem(.separator())
-        if let strays { menu.addItem(withTitle: strays, action: nil, keyEquivalent: "") }
+    /// The one line the menu has for updates, and only while there is something to say: an
+    /// update on its way in, or Macs that are on different versions. The daily check is not it.
+    var menuLine: String? { progress ?? strays }
+
+    /// The Updates pane of Settings.
+    private(set) lazy var settingsPane = FormPane(id: StatusMenu.Pane.updates, title: "Updates", symbol: "arrow.down.circle") { [unowned self] in self.settingsRows() }
+
+    private func settingsRows() -> [SettingsRow] {
+        var rows: [SettingsRow] = [.header("Baton \(build.version)")]
+        if let whyNot { rows.append(.text(whyNot)) }
+        if let strays { rows.append(.note("\(strays). Macs on different versions cannot share input.")) }
         let activity = self.activity
-        menu.addItem(withTitle: activity ?? "Check for Updates…", action: activity == nil ? #selector(checkForUpdates) : nil, keyEquivalent: "").target = self
+        rows.append(.button(activity ?? "Check for Updates…", enabled: activity == nil) { [unowned self] in self.checkForUpdates() })
         // The anchor's switch counts for every Mac; a client changes it there.
         let reachable = role == .anchor || (anchorState != nil && anchorBuild?.build.kind == .release)
-        let automatic = menu.addItem(withTitle: "Install Updates Automatically", action: build.kind == .release && reachable ? #selector(toggleAutomatic) : nil, keyEquivalent: "")
-        automatic.target = self
-        automatic.state = isAutomatic ? .on : .off
+        rows.append(.toggle("Install updates automatically", on: isAutomatic, enabled: build.kind == .release && reachable,
+                            detail: "Once a day. Your Macs update together, when the mouse and keyboard have been left alone for a minute.") { [unowned self] on in
+            if self.role == .anchor {
+                self.setAutomatic(on)
+            } else {
+                self.link?.send(.setAutomatic(on))
+            }
+        })
+        rows.append(.text("For all your Macs: they are always on the same version, and the switch is the same on every one."))
+        return rows
     }
 
-    @objc private func toggleAutomatic() {
-        if role == .anchor {
-            setAutomatic(!settings.automatic)
-        } else {
-            link?.send(.setAutomatic(!isAutomatic))
-        }
-    }
-
-    @objc private func checkForUpdates() {
+    private func checkForUpdates() {
         check { [self] release, error in
             if let error { return couldNotUpdate(error) }
             NSApp.activate(ignoringOtherApps: true)

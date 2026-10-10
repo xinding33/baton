@@ -3,13 +3,13 @@ import BatonCore
 import Network
 
 /// The shared clipboard as the app sees it: `ClipboardService` on the real pasteboard and the
-/// real network, with its menu items and its `ctl clipboard` command.
+/// real network, with its pane of Settings and its `ctl clipboard` command.
 final class SharedClipboard: NSObject {
     private let config: Config
     private let secret: Data
     private let service: ClipboardService
 
-    /// The menu needs redrawing.
+    /// What the menu and Settings show has changed.
     var onStateChanged: (() -> Void)?
     /// Anchor only: sharing was switched on or off and the setting should be saved.
     var onSettingChanged: ((Bool) -> Void)?
@@ -65,39 +65,55 @@ final class SharedClipboard: NSObject {
         }
     }
 
-    func menuItems() -> [NSMenuItem] {
+    /// Copies made here do not reach the other Macs because macOS has not been told to let
+    /// Baton read them.
+    private func pasteBlocked(_ status: ClipboardService.Status) -> Bool {
+        status.enabled && (status.access == .asks || status.access == .denied)
+    }
+
+    /// The Macs to turn Handoff off on. The anchor lists every one; a client speaks for itself.
+    private func handoffMachines(_ status: ClipboardService.Status) -> [String] {
+        status.enabled ? status.turnOffHandoffOn.filter { config.role == .anchor || $0 == config.name } : []
+    }
+
+    /// What the menu points out while copies are not getting through as they should.
+    var attention: StatusMenu.Attention? {
+        let status = service.status
+        if pasteBlocked(status) {
+            return .init(summary: "Copies made here are not shared", detail: "Copies made on this Mac are not shared: see Clipboard.", pane: StatusMenu.Pane.clipboard)
+        }
+        guard !handoffMachines(status).isEmpty else { return nil }
+        return .init(summary: "Universal Clipboard gets in the way", detail: "Universal Clipboard is also on and gets in the way of the shared clipboard: see Clipboard.", pane: StatusMenu.Pane.clipboard)
+    }
+
+    /// The Clipboard pane of Settings.
+    private(set) lazy var settingsPane = FormPane(id: StatusMenu.Pane.clipboard, title: "Clipboard", symbol: "doc.on.clipboard") { [unowned self] in self.settingsRows() }
+
+    private func settingsRows() -> [SettingsRow] {
         let status = service.status
         let reachable = config.role == .anchor || status.connected
-        let share = NSMenuItem(title: "Share clipboard", action: reachable ? #selector(toggle) : nil, keyEquivalent: "")
-        share.target = self
-        share.state = status.enabled ? .on : .off
-        var items = [share]
-        if status.enabled, status.access == .asks || status.access == .denied {
-            items.append(NSMenuItem(title: "Copies made here are not shared: allow Baton in Privacy & Security › Paste from Other Apps", action: nil, keyEquivalent: ""))
+        var rows: [SettingsRow] = [
+            .header("Shared clipboard"),
+            .toggle("Share the clipboard between your Macs", on: status.enabled, enabled: reachable,
+                    detail: "What is copied on one Mac can be pasted on the others. A copy larger than \(ClipboardContent.format(bytes: status.maxBytes)) is not shared.") { [unowned self] on in
+                self.service.setEnabled(on)
+            },
+        ]
+        if pasteBlocked(status) {
+            rows.append(.note("Copies made on this Mac are not shared. In System Settings › Privacy & Security › Paste from Other Apps, set Baton to always allow."))
         }
-        // The anchor lists every Mac that should turn Handoff off; a client speaks for itself.
-        let machines = status.enabled ? status.turnOffHandoffOn.filter { config.role == .anchor || $0 == config.name } : []
+        let machines = handoffMachines(status)
         if !machines.isEmpty {
-            items.append(NSMenuItem(title: "Universal Clipboard is also on and gets in the way:", action: nil, keyEquivalent: ""))
+            rows.append(.note("Universal Clipboard is also on and gets in the way: macOS sends every copy as well, more slowly, and can replace the one Baton delivered. "
+                + "Switch off “Allow Handoff between this Mac and your iCloud devices” in System Settings › General › \(UniversalClipboard.settingsPaneName)."))
         }
         for machine in machines {
-            let item = NSMenuItem(title: "Turn off Handoff on \(machine == config.name ? "this Mac" : machine)…", action: #selector(showHandoffSetting(_:)), keyEquivalent: "")
-            item.target = self
-            item.representedObject = machine
-            item.toolTip = "macOS also sends every copy to \(machine == config.name ? "this Mac" : machine), more slowly, and can replace the one Baton delivered. "
-                + "This opens System Settings › General › \(UniversalClipboard.settingsPaneName) there: switch off “Allow Handoff between this Mac and your iCloud devices”."
-            items.append(item)
+            rows.append(.button("Turn Off Handoff on \(machine == config.name ? "This Mac" : machine)…", detail: machine == config.name ? nil : "Opens the setting on \(machine).") { [unowned self] in
+                self.service.showHandoffSetting(on: machine)
+            })
         }
-        return items
-    }
-
-    @objc private func toggle() {
-        service.setEnabled(!service.status.enabled)
-    }
-
-    @objc private func showHandoffSetting(_ sender: NSMenuItem) {
-        guard let machine = sender.representedObject as? String else { return }
-        service.showHandoffSetting(on: machine)
+        rows.append(.text(reachable ? "For all your Macs: switching it on one switches it on every one." : "For all your Macs. It can be switched once this Mac has reached the anchor."))
+        return rows
     }
 
     func command(_ words: [String]) -> String {

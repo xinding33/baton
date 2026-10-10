@@ -63,7 +63,7 @@ public struct ClipboardHeader: Codable, Equatable, Sendable {
 public enum ClipboardFrame: Equatable, Sendable {
     case hello(ClipboardHello)
     case settings(ClipboardSettings)
-    /// Client to anchor: someone switched sharing on or off in that client's menu.
+    /// Client to anchor: someone switched sharing on or off in that client's Settings.
     case setEnabled(Bool)
     case begin(ClipboardHeader)
     /// The parts' bytes, one part after another.
@@ -75,7 +75,7 @@ public enum ClipboardFrame: Equatable, Sendable {
     case universalClipboard(Bool)
     /// Anchor to client: the Macs on which Handoff should be turned off.
     case turnOffHandoff([String])
-    /// Anchor to client: someone asked, in the anchor's menu, to see the client's Handoff setting.
+    /// Anchor to client: someone asked, in the anchor's Settings, to see the client's Handoff setting.
     case showHandoffSetting
 
     private var kind: UInt8 {

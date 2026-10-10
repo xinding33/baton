@@ -3,7 +3,8 @@ import BatonCore
 import XCTest
 @testable import Baton
 
-/// The setup and settings window, driven the way `ctl settings` drives it. Everything it would
+/// The setup form, which is the General pane of Settings afterwards, driven the way
+/// `ctl settings` drives it. Everything it would
 /// read from or change on the Mac is replaced: its files and launch agent live in a temporary
 /// folder, its permissions are made up, and it neither searches the network nor restarts.
 final class SetupWindowTests: XCTestCase {
@@ -14,6 +15,7 @@ final class SetupWindowTests: XCTestCase {
     var copied: [String] = []
     var accessibility = false
     var bluetooth = BluetoothAccess.notAsked
+    var menuIconShown = true
 
     override func setUpWithError() throws {
         home = FileManager.default.temporaryDirectory.appendingPathComponent("baton-setup-tests-\(UUID().uuidString)")
@@ -40,7 +42,8 @@ final class SetupWindowTests: XCTestCase {
         environment.askForAccessibility = {}
         environment.askForBluetooth = {}
         environment.open = { [unowned self] in self.opened.append($0) }
-        environment.present = { _ in }
+        environment.showsMenuIcon = { [unowned self] in self.menuIconShown }
+        environment.showMenuIcon = { [unowned self] in self.menuIconShown = $0 }
         environment.copy = { [unowned self] in self.copied.append($0) }
         environment.searchesNetwork = false
         environment.relaunch = { [unowned self] in self.relaunches += 1 }
@@ -151,7 +154,7 @@ final class SetupWindowTests: XCTestCase {
     func testClosingTheSetupWindowQuitsAndWritesNothing() {
         let controller = makeController()
         controller.whenSetUp { _, _ in XCTFail("nothing was set up") }
-        controller.windowWillClose(Notification(name: NSWindow.willCloseNotification))
+        controller.windowDidClose()
         XCTAssertEqual(quits, 1)
         XCTAssertFalse(FileManager.default.fileExists(atPath: installation.configURL.path))
         XCTAssertFalse(agent.isInstalled)
@@ -251,13 +254,10 @@ final class SetupWindowTests: XCTestCase {
         }
         accessibility = true
         bluetooth = .allowed
-        controller.keyboards = [BluetoothKeyboard(address: "00-11-22-33-44-55", name: "Magic Keyboard")]
 
         var status = report(controller)
-        XCTAssertEqual(status["keyboards"] as? [String], ["none", "00-11-22-33-44-55"])
         snapshot(controller.makeState(), "5-settings-anchor")
 
-        status = report(controller, "keyboard 00:11:22:33:44:55")
         status = report(controller, "name desk")
         XCTAssertEqual(status["unappliedChanges"] as? Bool, true)
         snapshot(controller.makeState(), "6-settings-anchor-changed")
@@ -265,35 +265,63 @@ final class SetupWindowTests: XCTestCase {
         XCTAssertEqual(relaunches, 1)
 
         // The anchor's own copy changed, and it wrote the file. Its next save keeps the change.
-        XCTAssertEqual(anchor?.currentConfig.keyboardAddress, "00-11-22-33-44-55")
+        XCTAssertEqual(anchor?.currentConfig.name, "desk")
         anchor?.setShareClipboard(false)
         let config = try XCTUnwrap(installation.load().config)
         XCTAssertEqual(config.name, "desk")
-        XCTAssertEqual(config.keyboardAddress, "00-11-22-33-44-55")
         XCTAssertEqual(config.placements.map(\.of), ["desk"], "the other Macs stay where they were, around the renamed one")
         XCTAssertFalse(config.shareClipboard)
     }
 
-    func testOpenAtLoginIsSwitchedFromTheMenu() throws {
+    func testOpenAtLoginAndTheMenuBarIconAreSwitchedThereAndThen() throws {
         _ = try deploy(name: "mini", role: "client")
         try agent.remove()
         let controller = makeController()
         controller.whenSetUp { _, _ in }
+        var redraws = 0
+        controller.onMenuIconChanged = { redraws += 1 }
 
-        let menu = NSMenu()
-        menu.addItem(withTitle: "Looking for the anchor…", action: nil, keyEquivalent: "")
-        controller.addItems(to: menu)
-        let titles = menu.items.map(\.title)
-        XCTAssertEqual(titles.suffix(2), ["Settings…", "Open at Login"])
-        let item = try XCTUnwrap(menu.items.last)
-        XCTAssertEqual(item.state, .off)
-        XCTAssertNotNil(item.action)
+        var state = controller.makeState()
+        XCTAssertFalse(state.openAtLogin)
+        XCTAssertTrue(state.loginEnabled)
+        XCTAssertTrue(state.showsMenuIcon)
 
-        _ = item.target?.perform(item.action)
+        // Neither waits for Apply and Restart, which stays greyed out.
+        var status = report(controller, "login on")
         XCTAssertEqual(agent.executable, app)
-        XCTAssertEqual(report(controller)["openAtLogin"] as? Bool, true)
+        XCTAssertEqual(status["openAtLogin"] as? Bool, true)
+        XCTAssertEqual(status["unappliedChanges"] as? Bool, false)
+        status = report(controller, "icon off")
+        state = controller.makeState()
+        XCTAssertTrue(state.openAtLogin)
+        XCTAssertFalse(state.showsMenuIcon)
+        XCTAssertFalse(menuIconShown)
+        XCTAssertEqual(redraws, 1)
+        XCTAssertEqual(relaunches, 0)
+        snapshot(state, "11-settings-client-icon-hidden")
+
         _ = report(controller, "login off")
         XCTAssertFalse(agent.isInstalled)
+    }
+
+    func testWhatNeedsAttentionGoesToTheMenuWithThePaneThatPutsItRight() throws {
+        _ = try deploy(name: "studio", role: "anchor")
+        let controller = makeController()
+        var anchor: Anchor?
+        controller.whenSetUp { config, secret in
+            anchor = Anchor(config: config, secret: secret)
+            controller.attach(anchor: anchor, client: nil)
+        }
+        XCTAssertEqual(controller.attention().map(\.summary), ["Accessibility is not allowed yet"])
+        XCTAssertEqual(controller.attention().map(\.pane), [StatusMenu.Pane.general])
+
+        // What another pane has to say joins the list, and the General pane shows all of it.
+        accessibility = true
+        XCTAssertTrue(controller.attention().isEmpty)
+        controller.otherAttention = { [StatusMenu.Attention(summary: "Copies made here are not shared", detail: "See Clipboard.", pane: StatusMenu.Pane.clipboard)] }
+        XCTAssertEqual(controller.attention().map(\.pane), [StatusMenu.Pane.clipboard])
+        XCTAssertEqual(controller.makeState().status, "See Clipboard.")
+        XCTAssertTrue(controller.makeState().statusNeedsAttention)
     }
 
     func testAnUnreadableConfigIsExplainedAndKept() throws {
