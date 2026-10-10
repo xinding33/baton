@@ -15,7 +15,7 @@ final class Anchor {
     private let server: AnchorServer
     private var tap: EventTap!
     private var displayWatcher: DisplayWatcher?
-    private var timer: Timer?
+    private var timer: DispatchSourceTimer?
 
     private(set) var focus: Focus = .local
     private(set) var layout = Layout()
@@ -33,6 +33,10 @@ final class Anchor {
     private var modifiersDown: Set<UInt16> = []
     private var motionSeq: UInt64 = 0
     private var capturing = false
+    private var lastCrossingAt: UInt64 = 0
+    /// After a crossing the cursor must settle this long before it may cross again, so a hand
+    /// resting on the border doesn't bounce it between two machines.
+    private let crossingLockoutMs: UInt64 = 150
 
     var onStateChanged: (() -> Void)?
 
@@ -57,7 +61,7 @@ final class Anchor {
             self?.rebuildLayout()
         }
         startTapWhenPermitted()
-        timer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in self?.heartbeat() }
+        timer = repeatingTimer(every: 0.25) { [weak self] in self?.heartbeat() }
     }
 
     // MARK: Permissions and the tap
@@ -104,7 +108,12 @@ final class Anchor {
         return Motion(x: remotePosition.x, y: remotePosition.y, seq: motionSeq, flags: flags.rawValue)
     }
 
+    private var mayCross: Bool {
+        buttonsDown.isEmpty && Net.monotonicMillis() - lastCrossingAt >= crossingLockoutMs
+    }
+
     private func enterRemote(_ name: String, at point: CGPoint, flags: CGEventFlags) {
+        lastCrossingAt = Net.monotonicMillis()
         if focus == .local {
             parkPoint = cursorLocation()
             // Only take the mouse away from the local cursor when its events can be forwarded.
@@ -126,6 +135,7 @@ final class Anchor {
     /// Brings the cursor back to this machine, at `point` or where it was parked.
     func goLocal(at point: CGPoint?) {
         guard case let .remote(name) = focus else { return }
+        lastCrossingAt = Net.monotonicMillis()
         server.send(name, .leave)
         focus = .local
         let target = point ?? parkPoint
@@ -169,14 +179,14 @@ final class Anchor {
         case .local:
             let previous = lastLocation
             lastLocation = location
-            guard !paused, buttonsDown.isEmpty else { return false }
+            guard !paused, mayCross else { return false }
             if case let .cross(name, point) = layout.move(on: config.name, from: previous, dx: dx, dy: dy),
                isPressed(location, against: name, dx: dx, dy: dy) {
                 enterRemote(name, at: point, flags: flags)
             }
             return false
         case let .remote(name):
-            switch layout.move(on: name, from: remotePosition, dx: dx, dy: dy, allowCross: buttonsDown.isEmpty) {
+            switch layout.move(on: name, from: remotePosition, dx: dx, dy: dy, allowCross: mayCross) {
             case let .stay(point):
                 remotePosition = point
                 server.sendMotion(name, motion(flags))

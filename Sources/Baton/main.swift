@@ -8,6 +8,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var control: ControlServer?
     private var statusItem: NSStatusItem?
     private var activity: NSObjectProtocol?
+    private var terminationSource: DispatchSourceSignal?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         let config: Config
@@ -41,6 +42,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             client.start()
             self.client = client
         }
+
+        // Hand the mouse back before being stopped, e.g. by a redeploy.
+        signal(SIGTERM, SIG_IGN)
+        terminationSource = DispatchSource.makeSignalSource(signal: SIGTERM, queue: .main)
+        terminationSource?.setEventHandler { [weak self] in
+            self?.anchor?.goLocal(at: nil)
+            exit(0)
+        }
+        terminationSource?.resume()
 
         control = ControlServer { [weak self] words in self?.command(words) ?? "" }
         control?.start()

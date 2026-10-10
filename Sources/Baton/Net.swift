@@ -116,3 +116,12 @@ final class Link {
         }
     }
 }
+
+/// A main-queue timer that keeps firing while a menu is open, which a run-loop `Timer` does not.
+func repeatingTimer(every interval: TimeInterval, _ handler: @escaping () -> Void) -> DispatchSourceTimer {
+    let timer = DispatchSource.makeTimerSource(queue: .main)
+    timer.schedule(deadline: .now() + interval, repeating: interval, leeway: .milliseconds(10))
+    timer.setEventHandler(handler: handler)
+    timer.resume()
+    return timer
+}

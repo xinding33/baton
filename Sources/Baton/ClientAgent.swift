@@ -21,7 +21,7 @@ final class ClientAgent {
     private var datagramsReceived = 0
     private(set) var active = false
     private var displayWatcher: DisplayWatcher?
-    private var timer: Timer?
+    private var timer: DispatchSourceTimer?
     private var useCachedNext = false
     private var lastFailure = ""
 
@@ -43,7 +43,7 @@ final class ClientAgent {
         displayWatcher = DisplayWatcher { [weak self] in
             self?.link?.send(.displays(currentDisplays()))
         }
-        timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in self?.tick() }
+        timer = repeatingTimer(every: 1) { [weak self] in self?.tick() }
         connect()
     }
 
