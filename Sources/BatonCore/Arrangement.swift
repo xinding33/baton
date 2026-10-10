@@ -105,7 +105,7 @@ public struct Arrangement: Equatable, Sendable {
             for point in candidates {
                 let frame = CGRect(origin: point, size: size)
                 guard !obstacles.contains(where: { overlaps(frame, $0) }) else { continue }
-                let distance = hypot(point.x - desired.x, point.y - desired.y)
+                let distance = Double(hypot(point.x - desired.x, point.y - desired.y))
                 if best == nil || distance < best!.distance { best = (point, distance) }
             }
         }

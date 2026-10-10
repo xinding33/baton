@@ -6,6 +6,8 @@
 # run exactly what was deployed. BATON_APP=<path to a Baton.app> installs that bundle instead,
 # e.g. an unzipped release, which from then on keeps every Mac up to date by itself.
 set -euo pipefail
+# Taken relative to where the script was called from, not to the repository.
+if [ -n "${BATON_APP:-}" ]; then BATON_APP="$(cd "$BATON_APP" && pwd)"; fi
 cd "$(dirname "$0")/.."
 
 # Layout name, role, and SSH host of each machine. "local" is the Mac running this script.
