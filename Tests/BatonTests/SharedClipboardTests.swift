@@ -45,7 +45,7 @@ final class SharedClipboardTests: XCTestCase {
             there.releaseGlobally()
         }
 
-        let anchor = SharedClipboard(config: anchorConfig, secret: secret, pasteboard: here)
+        let anchor = SharedClipboard(config: anchorConfig, secret: secret, pasteboard: here, universalClipboard: { false })
         var saved: [Bool] = []
         var redraws = 0
         anchor.onSettingChanged = { saved.append($0) }
@@ -53,7 +53,7 @@ final class SharedClipboardTests: XCTestCase {
         anchor.start()
         wait("the listener") { self.status(anchor)["port"] as? Int == Int(anchorConfig.port) + 1 }
 
-        let client = SharedClipboard(config: clientConfig, secret: secret, pasteboard: there)
+        let client = SharedClipboard(config: clientConfig, secret: secret, pasteboard: there, universalClipboard: { false })
         client.start()
         XCTAssertNil(client.menuItems()[0].action, "a client that has not found the anchor cannot switch sharing")
         client.anchorChanged("127.0.0.1")
@@ -83,6 +83,53 @@ final class SharedClipboardTests: XCTestCase {
         client.anchorChanged(nil)
         wait("the client to leave") { (self.status(anchor)["peers"] as? [String]) == [] }
         XCTAssertEqual(status(client)["connected"] as? Bool, false)
+    }
+
+    func testTheMenuAsksForHandoffToBeTurnedOffAndOpensTheSetting() {
+        var anchorConfig = Config(name: "studio", role: .anchor)
+        anchorConfig.port = UInt16.random(in: 40000..<60000)
+        var clientConfig = Config(name: "mini", role: .client)
+        clientConfig.port = anchorConfig.port
+        let secret = Data((0..<32).map { _ in UInt8.random(in: 0...255) })
+        let here = NSPasteboard(name: NSPasteboard.Name("baton-test-\(UUID().uuidString)"))
+        let there = NSPasteboard(name: NSPasteboard.Name("baton-test-\(UUID().uuidString)"))
+        defer {
+            here.releaseGlobally()
+            there.releaseGlobally()
+        }
+        var handoffOnTheMini = true
+        var openedOnTheAnchor: [URL] = []
+        var openedOnTheMini: [URL] = []
+        let anchor = SharedClipboard(config: anchorConfig, secret: secret, pasteboard: here, universalClipboard: { true })
+        anchor.openSettings = { openedOnTheAnchor.append($0) }
+        anchor.start()
+        wait("the listener") { self.status(anchor)["port"] as? Int == Int(anchorConfig.port) + 1 }
+        let client = SharedClipboard(config: clientConfig, secret: secret, pasteboard: there, universalClipboard: { handoffOnTheMini })
+        client.openSettings = { openedOnTheMini.append($0) }
+        client.start()
+        client.anchorChanged("127.0.0.1")
+
+        let heading = "Universal Clipboard is also on and gets in the way:"
+        wait("the request in both menus") { anchor.menuItems().count == 3 && client.menuItems().count == 3 }
+        XCTAssertEqual(anchor.menuItems().map(\.title), ["Share clipboard", heading, "Turn off Handoff on mini…"])
+        XCTAssertEqual(client.menuItems().map(\.title), ["Share clipboard", heading, "Turn off Handoff on this Mac…"])
+        XCTAssertEqual(status(anchor)["turnOffHandoffOn"] as? [String], ["mini"])
+        XCTAssertEqual(status(client)["universalClipboardHere"] as? Bool, true)
+        XCTAssertTrue(anchor.menuItems()[2].toolTip?.contains("AirDrop") == true)
+
+        // Chosen in the anchor's menu, the setting opens on the mini, where it has to be changed.
+        let onAnchor = anchor.menuItems()[2]
+        _ = onAnchor.target?.perform(onAnchor.action, with: onAnchor)
+        wait("the setting to open on the mini") { openedOnTheMini == [UniversalClipboard.settingsURL] }
+        let onClient = client.menuItems()[2]
+        _ = onClient.target?.perform(onClient.action, with: onClient)
+        wait("the setting to open again") { openedOnTheMini.count == 2 }
+        XCTAssertEqual(openedOnTheAnchor, [])
+
+        // Once it is off there, both menus stop asking. The real check runs every five seconds.
+        handoffOnTheMini = false
+        wait("the request to go") { anchor.menuItems().count == 1 && client.menuItems().count == 1 }
+        client.anchorChanged(nil)
     }
 
     func testAWrongSecretDoesNotGetIn() {

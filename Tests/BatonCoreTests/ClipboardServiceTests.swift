@@ -53,12 +53,33 @@ final class Machine {
     let service: ClipboardService
     private let lock = NSLock()
     private var lines: [String] = []
+    private var handoff = false
+    private var shown = 0
+
+    /// What this Mac's Handoff switch says.
+    var handoffSetting: Bool {
+        get { lock.lock(); defer { lock.unlock() }; return handoff }
+        set { lock.lock(); handoff = newValue; lock.unlock() }
+    }
+
+    /// How often this Mac was asked to show its Handoff setting.
+    var settingShown: Int { lock.lock(); defer { lock.unlock() }; return shown }
 
     init(_ name: String, hub: Bool, enabled: Bool = true, maxBytes: Int) {
         self.name = name
         let lock = self.lock
         var sink: ((String) -> Void)!
-        service = ClipboardService(name: name, hub: hub, board: board, enabled: enabled, maxBytes: maxBytes, pollInterval: 0.02, log: { sink($0) })
+        var setting: (() -> Bool)!
+        service = ClipboardService(
+            name: name, hub: hub, board: board, enabled: enabled, maxBytes: maxBytes, pollInterval: 0.02,
+            universalClipboard: { setting() }, settingCheckInterval: 0.04, log: { sink($0) }
+        )
+        setting = { [weak self] in self?.handoffSetting ?? false }
+        service.onShowHandoffSetting = { [weak self] in
+            lock.lock()
+            self?.shown += 1
+            lock.unlock()
+        }
         sink = { [weak self] line in
             lock.lock()
             self?.lines.append(line)
@@ -419,6 +440,62 @@ final class ClipboardServiceTests: XCTestCase {
         settle()
         XCTAssertNil(studio.board.text)
         XCTAssertEqual(mini.board.readCount, 0)
+    }
+
+    // MARK: Universal Clipboard
+
+    func advice() -> [[String]] {
+        [studio, mini, mbp].map { $0!.service.status.turnOffHandoffOn }
+    }
+
+    func testEveryMacLearnsWhereHandoffShouldBeTurnedOff() {
+        start()
+        XCTAssertEqual(advice(), [[], [], []])
+        // As macOS ships: Handoff on everywhere.
+        for machine in [studio!, mini!, mbp!] { machine.handoffSetting = true }
+        wait("the advice") { advice() == Array(repeating: ["mbp", "mini"], count: 3) }
+        XCTAssertTrue(mini.service.status.universalClipboard)
+
+        // The owner turns it off on the mini, then on the MacBook; the Studio keeps it.
+        mini.handoffSetting = false
+        wait("the advice") { advice() == Array(repeating: ["mbp"], count: 3) }
+        mbp.handoffSetting = false
+        wait("the advice") { advice() == [[], [], []] }
+        XCTAssertTrue(studio.service.status.universalClipboard)
+        XCTAssertTrue(studio.log.contains { $0.contains("Handoff should be turned off on mbp, mini") })
+    }
+
+    func testNothingIsAskedWhileSharingIsOffOrAMacIsAway() {
+        start()
+        for machine in [studio!, mini!, mbp!] { machine.handoffSetting = true }
+        wait("the advice") { advice() == Array(repeating: ["mbp", "mini"], count: 3) }
+        mbp.service.disconnect()
+        wait("the mbp to leave") { studio.service.status.turnOffHandoffOn == ["mini"] && mbp.service.status.turnOffHandoffOn == [] }
+        studio.service.setEnabled(false)
+        wait("the advice to go") { studio.service.status.turnOffHandoffOn == [] && mini.service.status.turnOffHandoffOn == [] }
+        studio.service.setEnabled(true)
+        wait("the advice to return") { studio.service.status.turnOffHandoffOn == ["mini"] && mini.service.status.turnOffHandoffOn == ["mini"] }
+    }
+
+    func testAHandoffClipboardArrivingCountsWhateverTheSettingSays() {
+        start()
+        studio.handoffSetting = true
+        settle(0.2)
+        XCTAssertEqual(advice(), [[], [], []])
+        // The MacBook's setting says off, yet a clipboard arrives there through Handoff.
+        mbp.board.copy([("public.utf8-plain-text", Data("from the phone".utf8)), (ClipboardFilter.handoffMarker, Data())])
+        wait("the advice") { advice() == Array(repeating: ["mbp"], count: 3) }
+        XCTAssertNotNil(mbp.service.status.handoffClipboardSeen)
+        XCTAssertNil(studio.board.text, "a Handoff clipboard was passed on")
+    }
+
+    func testTheAnchorCanShowTheSettingOnAnyMac() {
+        start()
+        studio.service.showHandoffSetting(on: "mini")
+        wait("the mini to show it") { mini.settingShown == 1 }
+        studio.service.showHandoffSetting(on: "studio")
+        wait("the studio to show it") { studio.settingShown == 1 }
+        XCTAssertEqual(mbp.settingShown, 0)
     }
 
     // MARK: The real transport

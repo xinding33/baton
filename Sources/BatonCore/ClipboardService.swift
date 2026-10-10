@@ -169,6 +169,12 @@ public final class ClipboardService {
         /// The shared copy: where it was made, its types and sizes.
         public var shared = "nothing yet"
         public var lastEvent = "none yet"
+        /// Whether Universal Clipboard is on on this Mac.
+        public var universalClipboard = false
+        /// The Macs on which Handoff should be turned off, as the anchor sees it.
+        public var turnOffHandoffOn: [String] = []
+        /// When a clipboard last arrived here through Handoff.
+        public var handoffClipboardSeen: Date?
     }
 
     private let name: String
@@ -190,6 +196,18 @@ public final class ClipboardService {
     private var settling = 0
     private var settleTicks: Int { Int((0.3 / pollInterval).rounded(.up)) }
 
+    // Universal Clipboard, which competes with this.
+    private let universalClipboardSetting: () -> Bool
+    private let settingCheckInterval: TimeInterval
+    private var ticksToSettingCheck = 0
+    private var universalClipboardHere = false
+    /// Since when the setting has said off, and when a Handoff clipboard last turned up anyway.
+    private var settingOffSince: UInt64?
+    private var handoffClipboardSeenAt: UInt64?
+    /// Anchor: what each client reports.
+    private var universalClipboardOn: [String: Bool] = [:]
+    private var turnOffHandoffOn: [String] = []
+
     // Anchor
     private var listener: NWListener?
     private var listening: (port: NWEndpoint.Port, parameters: NWParameters)?
@@ -208,11 +226,19 @@ public final class ClipboardService {
     public var onStatusChanged: (() -> Void)?
     /// Anchor only, called on a private queue: sharing was switched on or off, from any Mac.
     public var onEnabledChanged: ((Bool) -> Void)?
+    /// Called on a private queue: someone asked to see this Mac's Handoff setting.
+    public var onShowHandoffSetting: (() -> Void)?
 
     /// - Parameters:
     ///   - hub: true on the anchor, which listens; false on a client, which connects to it.
     ///   - enabled: the anchor's setting. A client waits to be told by the anchor.
-    public init(name: String, hub: Bool, board: ClipboardBoard, enabled: Bool, maxBytes: Int, pollInterval: TimeInterval = 0.05, log: @escaping (String) -> Void) {
+    ///   - universalClipboard: whether this Mac's settings leave Universal Clipboard on.
+    public init(
+        name: String, hub: Bool, board: ClipboardBoard, enabled: Bool, maxBytes: Int, pollInterval: TimeInterval = 0.05,
+        universalClipboard: @escaping () -> Bool = { false }, settingCheckInterval: TimeInterval = 5, log: @escaping (String) -> Void
+    ) {
+        universalClipboardSetting = universalClipboard
+        self.settingCheckInterval = settingCheckInterval
         self.name = name
         isHub = hub
         self.board = board
@@ -247,6 +273,10 @@ public final class ClipboardService {
         UInt64(Date().timeIntervalSince1970 * 1000)
     }
 
+    private static func uptime() -> UInt64 {
+        DispatchTime.now().uptimeNanoseconds / 1_000_000
+    }
+
     // MARK: Switching on and off
 
     /// Switches sharing for every Mac. On a client this asks the anchor, which tells everyone.
@@ -264,6 +294,7 @@ public final class ClipboardService {
         guard value != enabled else { return }
         apply(enabled: value)
         for peer in peers.values { peer.send(.settings(settings)) }
+        advise()
         onEnabledChanged?(value)
     }
 
@@ -281,6 +312,7 @@ public final class ClipboardService {
             if let lastCount, lastCount != count { register.changedWithoutSharing(now: ClipboardService.now()) }
             lastCount = count
             settling = 0
+            ticksToSettingCheck = 0
             let timer = DispatchSource.makeTimerSource(queue: queue)
             timer.schedule(deadline: .now() + pollInterval, repeating: pollInterval, leeway: .milliseconds(10))
             timer.setEventHandler { [weak self] in self?.poll() }
@@ -299,6 +331,11 @@ public final class ClipboardService {
     /// There is no notification for a copy; the change count is all there is to watch. Reading
     /// it costs well under a microsecond.
     private func poll() {
+        ticksToSettingCheck -= 1
+        if ticksToSettingCheck <= 0 {
+            ticksToSettingCheck = Int((settingCheckInterval / pollInterval).rounded(.up))
+            checkUniversalClipboard()
+        }
         let count = board.changeCount
         if count != lastCount {
             lastCount = count
@@ -329,6 +366,11 @@ public final class ClipboardService {
         case let .skip(reason):
             if reason != .fromBaton { register.changedWithoutSharing(now: ClipboardService.now()) }
             note("copy not shared (\(reason.rawValue))")
+            if reason == .fromHandoff {
+                handoffClipboardSeenAt = ClipboardService.uptime()
+                update { $0.handoffClipboardSeen = Date() }
+                checkUniversalClipboard()
+            }
         case let .share(types):
             switch board.read(types, limit: maxBytes) {
             case .changed:
@@ -391,6 +433,54 @@ public final class ClipboardService {
 
     private func refused(_ header: ClipboardHeader, from sender: String) {
         note("from \(sender): refused, \(ClipboardContent.format(bytes: header.total)) is over the limit")
+    }
+
+    // MARK: Universal Clipboard
+
+    /// It counts as on here if the settings say so, or if one of its clipboards has turned up
+    /// in the last ten minutes although they say it is off.
+    private func checkUniversalClipboard() {
+        let now = ClipboardService.uptime()
+        var on = universalClipboardSetting()
+        if on {
+            settingOffSince = nil
+        } else {
+            let since = settingOffSince ?? now
+            settingOffSince = since
+            if let seen = handoffClipboardSeenAt, seen >= since, now - seen < 600_000 { on = true }
+        }
+        guard on != universalClipboardHere else { return }
+        universalClipboardHere = on
+        log("Universal Clipboard is \(on ? "on" : "off") on this Mac")
+        update(notify: true) { $0.universalClipboard = on }
+        if isHub {
+            advise()
+        } else if let link, link.peer != nil {
+            link.send(.universalClipboard(on))
+        }
+    }
+
+    /// Anchor: works out where Handoff should be turned off and tells every Mac.
+    private func advise() {
+        guard isHub else { return }
+        let clients = enabled ? peers.keys.filter { universalClipboardOn[$0] == true } : []
+        let machines = UniversalClipboard.turnOff(anchorOn: universalClipboardHere, clientsOn: clients)
+        guard machines != turnOffHandoffOn else { return }
+        turnOffHandoffOn = machines
+        log(machines.isEmpty ? "Universal Clipboard no longer competes" : "Universal Clipboard competes: Handoff should be turned off on \(machines.joined(separator: ", "))")
+        update(notify: true) { $0.turnOffHandoffOn = machines }
+        for peer in peers.values { peer.send(.turnOffHandoff(machines)) }
+    }
+
+    /// Shows the Handoff setting on the named Mac: this one, or a client, which is asked to.
+    public func showHandoffSetting(on machine: String) {
+        queue.async {
+            if machine == self.name {
+                self.onShowHandoffSetting?()
+            } else {
+                self.peers[machine]?.send(.showHandoffSetting)
+            }
+        }
     }
 
     // MARK: Anchor
@@ -457,7 +547,16 @@ public final class ClipboardService {
         peers[hello.name] = link
         link.peer = hello
         link.onFrame = { [weak self] frame in
-            if case let .setEnabled(value) = frame { self?.changeEnabled(value) }
+            guard let self else { return }
+            switch frame {
+            case let .setEnabled(value):
+                self.changeEnabled(value)
+            case let .universalClipboard(on):
+                self.universalClipboardOn[hello.name] = on
+                self.advise()
+            default:
+                break
+            }
         }
         link.onContent = { [weak self, weak link] content in
             guard let self, let link else { return }
@@ -467,12 +566,16 @@ public final class ClipboardService {
         link.onClose = { [weak self, weak link] reason in
             guard let self, let link, self.peers[hello.name] === link else { return }
             self.peers[hello.name] = nil
+            self.universalClipboardOn[hello.name] = nil
             self.log("\(hello.name): disconnected (\(reason))")
             self.update(notify: true) { $0.peers = self.peers.keys.sorted() }
+            self.advise()
         }
         // The settings go first, so the client knows whether sharing is on when the hello arrives.
         link.send(.settings(settings))
         link.send(.hello(ClipboardHello(name: name, have: register.current?.stamp)))
+        link.send(.turnOffHandoff(turnOffHandoffOn))
+        universalClipboardOn[hello.name] = nil
         log("\(hello.name): connected")
         update(notify: true) { $0.peers = self.peers.keys.sorted() }
         catchUp(link, with: hello)
@@ -519,7 +622,13 @@ public final class ClipboardService {
                 self.lastFailure = ""
                 self.log("connected to \(hello.name)")
                 self.update(notify: true) { $0.connected = true }
+                link.send(.universalClipboard(self.universalClipboardHere))
                 self.catchUp(link, with: hello)
+            case let .turnOffHandoff(machines):
+                self.turnOffHandoffOn = machines
+                self.update(notify: true) { $0.turnOffHandoffOn = machines }
+            case .showHandoffSetting:
+                self.onShowHandoffSetting?()
             default:
                 break
             }
@@ -538,7 +647,13 @@ public final class ClipboardService {
             }
             self.lastFailure = wasConnected ? "" : reason
             self.link = nil
-            if wasConnected { self.update(notify: true) { $0.connected = false } }
+            self.turnOffHandoffOn = []
+            if wasConnected {
+                self.update(notify: true) {
+                    $0.connected = false
+                    $0.turnOffHandoffOn = []
+                }
+            }
             self.queue.asyncAfter(deadline: .now() + 2) { [weak self] in self?.open() }
         }
         link.start()

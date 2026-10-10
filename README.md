@@ -67,9 +67,16 @@ unless something was copied on that Mac since.
 With **Handoff** on, Universal Clipboard offers each copy to the other Macs as well. Baton never
 reads or passes on a clipboard that arrived that way, and keeps what it writes out of Handoff, so
 the two cannot loop; but macOS may still put its own, slower copy in place of the one Baton
-delivered. Turning Handoff off on the clients (System Settings → General → AirDrop & Handoff)
-rules that out. With it left on at the anchor, an iPhone's clipboard still reaches the anchor;
-Baton does not pass it on to the clients.
+delivered.
+
+Baton therefore watches the Handoff setting on every Mac. While Universal Clipboard is on on two
+or more of them, the menu on the anchor lists the clients to turn it off on, and each of those
+clients says so in its own menu. Choosing an entry opens the setting on that Mac: System
+Settings → General → AirDrop & Continuity → "Allow Handoff between this Mac and your iCloud
+devices". The entries go away within a few seconds of switching it off. The anchor may keep
+Handoff, so an iPhone's clipboard still reaches the anchor; Baton does not pass it on to the
+clients. `Baton ctl clipboard` shows what each Mac found, including when a Handoff clipboard
+last arrived there.
 
 The clipboard has its own connection to the anchor, one port above `port`, so an image of many
 megabytes never delays the heartbeat on the input link.
