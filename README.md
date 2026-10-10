@@ -126,9 +126,9 @@ This Mac Awake** and **Only on Power Adapter**. They are kept in `wake.json` nex
 along with the hotkey (`"hotKey": null` for none; restart the agent after editing the file).
 
 Baton takes over from [Ripple](https://github.com/xinding33/ripple), and a Mac's first run copies
-the three switches from Ripple's settings on that Mac. While Ripple is running on a Mac, Baton
-leaves waking, the hotkey and keeping awake to it there, and the menu says so; the anchor still
-passes other Macs' wakes along. Quit Ripple and Baton takes over at once.
+the three switches from Ripple's settings on that Mac. Do not run the two on the same Mac: every
+wake would be sent twice.
+
 ## The shared clipboard
 
 What is copied on one Mac can be pasted on the others: text, rich text, links and images. A copy

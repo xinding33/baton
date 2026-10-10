@@ -172,37 +172,6 @@ final class WakeTogetherTests: XCTestCase {
         XCTAssertEqual(effects(studio.linksChanged(now: 3000, links: [again, mbp])), [.send(WakeRequest(origin: "mini"), to: mbp)])
     }
 
-    // MARK: Standing down
-
-    func testStandingDownStartsNothingAndLeavesTheDisplayAlone() {
-        var mini = client()
-        mini.standingDown = true
-        XCTAssertEqual(effects(mini.displayWoke(now: 1000, links: [studio])), [])
-        XCTAssertEqual(effects(mini.wakeAll(now: 2000, links: [studio])), [])
-        XCTAssertEqual(effects(mini.received(WakeRequest(origin: "mbp"), from: "studio", now: 3000, links: [studio])), [])
-        XCTAssertFalse(mini.hasPending(now: 3000))
-    }
-
-    func testAnchorStandingDownStillPassesWakesBetweenClients() {
-        var studio = anchor()
-        studio.standingDown = true
-        let actions = effects(studio.received(WakeRequest(origin: "mini"), from: "mini", now: 1000, links: [mini, mbp]))
-        XCTAssertEqual(actions, [.send(WakeRequest(origin: "mini"), to: mbp)])
-        // Its own display was not woken by this, so its next wake is a real one once it takes over.
-        studio.standingDown = false
-        XCTAssertEqual(effects(studio.displayWoke(now: 1500, links: [mini, mbp])).count, 2)
-    }
-
-    func testFindsEitherRippleAmongRunningApps() {
-        let others = ["com.apple.finder", "com.xinding.baton"]
-        XCTAssertFalse(WakeRival.rippleIsRunning(among: others))
-        XCTAssertFalse(WakeRival.rippleIsRunning(among: [String]()))
-        XCTAssertTrue(WakeRival.rippleIsRunning(among: others + ["io.github.xinding33.ripple"]))
-        // Ripple before version 1.1, which the mini still runs.
-        XCTAssertTrue(WakeRival.rippleIsRunning(among: ["com.xinding.Ripple"] + others))
-        XCTAssertFalse(WakeRival.rippleIsRunning(among: ["io.github.xinding33.ripple.helper"]))
-    }
-
     // MARK: Hotkey
 
     let controlOptionCommand = CGEventFlags([.maskControl, .maskAlternate, .maskCommand]).rawValue

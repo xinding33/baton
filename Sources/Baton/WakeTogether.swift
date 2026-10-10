@@ -26,6 +26,9 @@ final class WakeTogether: NSObject {
     static let shared = WakeTogether()
 
     private static var settingsFile: URL { Paths.support.appendingPathComponent("wake.json") }
+    /// Where Ripple keeps its settings: under its current bundle identifier, and the one it had
+    /// before version 1.1.
+    private static let rippleDomains = ["io.github.xinding33.ripple", "com.xinding.Ripple"]
 
     /// A setting or something the menu shows has changed.
     var onStateChanged: (() -> Void)?
@@ -35,8 +38,6 @@ final class WakeTogether: NSObject {
     private lazy var injector = Injector()
     private let keepAwake = KeepAwake()
     private var recognizer = WakeHotKeyRecognizer()
-    private var rippleRunning = false
-    private var appsObservation: NSKeyValueObservation?
     private var pendingWatch: DispatchSourceTimer?
     private var recent: [String] = []
 
@@ -44,31 +45,10 @@ final class WakeTogether: NSObject {
         self.links = links
         coordinator = WakeCoordinator(name: config.name, role: config.role)
         settings = loadSettings()
-        rippleRunning = Self.isRippleRunning(NSWorkspace.shared)
         keepAwake.onChange = { [weak self] in self?.onStateChanged?() }
         apply()
-        note(rippleRunning ? "Ripple is running on this Mac; standing down until it quits" : "ready")
-
+        note("ready")
         NSWorkspace.shared.notificationCenter.addObserver(self, selector: #selector(screensDidWake), name: NSWorkspace.screensDidWakeNotification, object: nil)
-        // Ripple has no Dock icon, and the workspace posts no launch or quit notification for such
-        // apps. The list of running apps changes on the main run loop.
-        appsObservation = NSWorkspace.shared.observe(\.runningApplications) { [weak self] workspace, _ in
-            self?.update(rippleRunning: Self.isRippleRunning(workspace))
-        }
-    }
-
-    // MARK: Standing down for Ripple
-
-    private static func isRippleRunning(_ workspace: NSWorkspace) -> Bool {
-        WakeRival.rippleIsRunning(among: workspace.runningApplications.filter { !$0.isTerminated }.compactMap(\.bundleIdentifier))
-    }
-
-    private func update(rippleRunning running: Bool) {
-        guard running != rippleRunning else { return }
-        rippleRunning = running
-        note(running ? "Ripple started on this Mac; standing down until it quits" : "Ripple quit; taking over from it")
-        apply()
-        onStateChanged?()
     }
 
     // MARK: Settings
@@ -84,7 +64,7 @@ final class WakeTogether: NSObject {
         }
         // Baton takes over from Ripple, so a Mac starts out with what was chosen in Ripple there.
         var settings = WakeSettings()
-        let domains = WakeRival.rippleBundleIDs.compactMap { UserDefaults.standard.persistentDomain(forName: $0) }
+        let domains = Self.rippleDomains.compactMap { UserDefaults.standard.persistentDomain(forName: $0) }
         if let ripple = domains.first(where: { $0["installID"] != nil }) {
             settings.wakeOthers = ripple["autoWake"] as? Bool ?? settings.wakeOthers
             settings.keepAwake = ripple["keepAwake"] as? Bool ?? settings.keepAwake
@@ -115,8 +95,7 @@ final class WakeTogether: NSObject {
 
     private func apply() {
         coordinator?.wakeOthers = settings.wakeOthers
-        coordinator?.standingDown = rippleRunning
-        keepAwake.configure(wanted: settings.keepAwake && !rippleRunning, onlyOnPower: settings.keepAwakeOnlyOnPower)
+        keepAwake.configure(wanted: settings.keepAwake, onlyOnPower: settings.keepAwakeOnlyOnPower)
     }
 
     // MARK: Waking
@@ -171,7 +150,7 @@ final class WakeTogether: NSObject {
     func consumes(_ type: CGEventType, _ event: CGEvent) -> Bool {
         guard type == .keyDown || type == .keyUp, coordinator != nil else { return false }
         let outcome = recognizer.process(
-            rippleRunning ? nil : settings.hotKey,
+            settings.hotKey,
             code: UInt16(event.getIntegerValueField(.keyboardEventKeycode)),
             down: type == .keyDown,
             autorepeat: event.getIntegerValueField(.keyboardEventAutorepeat) != 0,
@@ -189,19 +168,16 @@ final class WakeTogether: NSObject {
         menu.addItem(.separator())
         func add(_ title: String, _ action: Selector, on: Bool? = nil, enabled: Bool = true) -> NSMenuItem {
             // Without an action the item is greyed out but still shows its setting.
-            let item = menu.addItem(withTitle: title, action: enabled && !rippleRunning ? action : nil, keyEquivalent: "")
+            let item = menu.addItem(withTitle: title, action: enabled ? action : nil, keyEquivalent: "")
             item.target = self
             if let on { item.state = on ? .on : .off }
             return item
         }
         _ = add("Wake All Macs" + (settings.hotKey.map { " (\($0.display))" } ?? ""), #selector(wakeAll))
         _ = add("Wake Others When This Mac Wakes", #selector(toggleWakeOthers), on: settings.wakeOthers)
-        let paused = settings.keepAwake && !rippleRunning && !keepAwake.isHolding
+        let paused = settings.keepAwake && !keepAwake.isHolding
         _ = add("Keep This Mac Awake" + (paused ? " (paused on battery)" : ""), #selector(toggleKeepAwake), on: settings.keepAwake)
         add("Only on Power Adapter", #selector(toggleOnlyOnPower), on: settings.keepAwakeOnlyOnPower, enabled: settings.keepAwake).indentationLevel = 1
-        if rippleRunning {
-            menu.addItem(withTitle: "Ripple is running, so Baton leaves waking to it", action: nil, keyEquivalent: "")
-        }
     }
 
     @objc private func toggleWakeOthers() {
@@ -237,7 +213,6 @@ final class WakeTogether: NSObject {
         let report: [String: Any] = [
             "name": coordinator.name,
             "role": coordinator.role.rawValue,
-            "ripple": rippleRunning ? "running, so Baton stands down" : "not running",
             "wakeOthers": settings.wakeOthers,
             "keepAwake": settings.keepAwake,
             "keepAwakeOnlyOnPower": settings.keepAwakeOnlyOnPower,
