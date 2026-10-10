@@ -23,6 +23,7 @@ The installed Baton is the owner's working mouse and keyboard, all day.
 - **The main thread must never block.** It carries the event tap, the heartbeat and the network callbacks; a stall drops the cursor back to the Studio after 800 ms and, if it lasts, freezes input sharing.
 - **Any IOBluetooth call blocks until Bluetooth permission is decided.** Keep IOBluetooth on the `BluetoothThread` in `Sources/Baton/Keyboard.swift`, gated on `CBManager.authorization == .allowedAlways`.
 - **Injected events must carry `Injector.marker`** so Baton's own taps ignore them. Anything new that posts events goes through `Injector`.
+- **Turning a display off or on blocks** until the system has rearranged the screens, and then waits up to two seconds for the change to show. `DisplayController` and its files are only used on the queue in `Sources/Baton/DisplayToggle.swift`. An instance run with `BATON_HOME` never switches a display.
 - **Timers that must keep firing use `repeatingTimer`** (`Net.swift`), not `Timer`: run-loop timers pause while a menu is open.
 - **A new permission prompt on a client can strand it**, since nobody may be at that Mac to answer. Say so in your summary if a change needs one.
 

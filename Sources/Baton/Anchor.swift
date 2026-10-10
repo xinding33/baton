@@ -79,6 +79,7 @@ final class Anchor {
         server.onLocalInput = { [weak self] name, point in self?.usedDirectly(name, at: point) }
         server.onForwardedKey = { [weak self] name, key in self?.route(key, from: name) }
         server.onKeyboardMoved = { [weak self] in self?.onStateChanged?() }
+        server.onDisplayPanel = { [weak self] in self?.onStateChanged?() }
         presence.onChange = { [weak self] _ in self?.onStateChanged?() }
         presence.watch(address: config.keyboardAddress)
         if config.keyboardAddress != nil { mover.requestPermission() }
@@ -133,13 +134,27 @@ final class Anchor {
             log("no place in the layout for: \(layout.unplaced.joined(separator: ", "))")
         }
         if case let .remote(name) = focus {
+            // The display the local cursor is parked on may have been turned off.
+            if let here = layout.machines[config.name] { parkPoint = here.clamp(parkPoint) }
             if let machine = layout.machines[name] {
                 remotePosition = machine.clamp(remotePosition)
+                // So may the display under the shared cursor, which also shifts the client's
+                // coordinates if it was the main one. Say where the cursor is now, or the client's
+                // would sit where its system left it until the mouse next moves.
+                server.send(name, .move(motion()))
             } else {
                 goLocal(at: nil)
             }
         }
         onStateChanged?()
+    }
+
+    // MARK: Displays of the other Macs
+
+    var displayPanels: [String: DisplayPanel] { server.peers.compactMapValues(\.displayPanel) }
+
+    func send(_ action: DisplayAction, to machine: String) {
+        server.send(machine, .displayAction(action))
     }
 
     // MARK: Arrangement editing

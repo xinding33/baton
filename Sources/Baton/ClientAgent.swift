@@ -36,6 +36,11 @@ final class ClientAgent {
     private var localReports = 0
 
     var onStateChanged: (() -> Void)?
+    /// This Mac's external displays, passed on to the anchor's menu.
+    var displayPanel: DisplayPanel? {
+        didSet { if connected, let displayPanel { link?.send(.displayPanel(displayPanel)) } }
+    }
+    var onDisplayAction: ((DisplayAction) -> Void)?
 
     init(config: Config, secret: Data) {
         self.config = config
@@ -287,6 +292,7 @@ final class ClientAgent {
             if welcome.keyboardAddress != nil { mover.requestPermission() }
             link.send(.keyboardPresent(presence.isPresent))
             link.send(.keyboardPaired(presence.isPaired))
+            if let displayPanel { link.send(.displayPanel(displayPanel)) }
             onStateChanged?()
         case let .keyboardCommand(command):
             log("keyboard: asked to \(command.action.rawValue) (\(command.strategy.rawValue))")
@@ -319,6 +325,8 @@ final class ClientAgent {
             if active { injector.scroll(scroll) }
         case let .key(key):
             if active { injector.key(key) }
+        case let .displayAction(action):
+            onDisplayAction?(action)
         default:
             break
         }

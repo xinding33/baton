@@ -15,6 +15,8 @@ final class PeerSession {
     var keyboardPresent = false
     /// Whether this client holds a pairing with the shared keyboard. Assumed until it says.
     var keyboardPaired = true
+    /// The client's external displays, once it has reported them.
+    var displayPanel: DisplayPanel?
 
     init(name: String, link: Link, displays: [DisplayInfo], codec: DatagramCodec) {
         self.name = name
@@ -51,6 +53,7 @@ final class AnchorServer {
     var onLocalInput: ((String, CGPoint) -> Void)?
     /// A client said it is going to sleep. It is dropped right after.
     var onPeerSleeping: ((String) -> Void)?
+    var onDisplayPanel: (() -> Void)?
     private var nextCommandId: UInt32 = 0
     private var commands: [UInt32: (peer: String, completion: (Bool, String) -> Void)] = [:]
 
@@ -134,6 +137,9 @@ final class AnchorServer {
                 log("\(peer.name): going to sleep")
                 self.onPeerSleeping?(peer.name)
                 self.drop(peer.name)
+            case let .displayPanel(panel):
+                peer.displayPanel = panel
+                self.onDisplayPanel?()
             default:
                 break
             }
