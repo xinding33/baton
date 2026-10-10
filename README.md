@@ -218,3 +218,11 @@ Logs are in `~/Library/Logs/Baton/baton.log`.
 Machines authenticate with a shared secret (`secret.key`, created by the first deploy and copied
 over SSH). Control traffic uses TLS with that secret as a pre-shared key; cursor positions travel
 as datagrams sealed with a per-session ChaCha20-Poly1305 key handed out over the TLS link.
+
+## Development
+
+Baton's implementation, tests, and documentation were developed with AI assistance.
+
+## License
+
+Copyright 2026 Xin Ding. Licensed under the [Apache License, Version 2.0](LICENSE).
