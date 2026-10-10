@@ -198,6 +198,22 @@ final class KeyboardMover: NSObject, IOBluetoothDevicePairDelegate, CBCentralMan
         }
     }
 
+    /// The Bluetooth keyboards this Mac is paired with, for choosing the shared one in Settings.
+    /// Nil if they cannot be read now: without the permission, or in the middle of a handoff.
+    func pairedKeyboards(completion: @escaping ([BluetoothKeyboard]?) -> Void) {
+        guard CBManager.authorization == .allowedAlways, !isBusy else { return completion(nil) }
+        BluetoothThread.shared.async {
+            let devices = IOBluetoothDevice.pairedDevices() as? [IOBluetoothDevice] ?? []
+            let keyboards = devices.compactMap { device -> BluetoothKeyboard? in
+                guard let address = device.addressString,
+                      KeyboardChoices.isKeyboard(majorClass: device.deviceClassMajor, minorClass: device.deviceClassMinor)
+                else { return nil }
+                return BluetoothKeyboard(address: address, name: device.name ?? "")
+            }
+            DispatchQueue.main.async { completion(keyboards) }
+        }
+    }
+
     private func code(_ result: IOReturn) -> String {
         "0x" + String(UInt32(bitPattern: result), radix: 16)
     }

@@ -24,6 +24,7 @@ final class ClientAgent {
     private var timer: DispatchSourceTimer?
     private var useCachedNext = false
     private var lastFailure = ""
+    private var discoveryState = ""
     private var idleCursorWatch: DispatchSourceTimer?
     private var tap: EventTap!
     private let keyCapture = KeyCapture()
@@ -157,9 +158,10 @@ final class ClientAgent {
             self.discovered = results.first?.endpoint
             if self.link == nil { self.connect() }
         }
-        browser.stateUpdateHandler = { state in
+        browser.stateUpdateHandler = { [weak self] state in
             if case let .failed(error) = state { log("discovery failed: \(error)") }
             if case let .waiting(error) = state { log("discovery waiting: \(error)") }
+            self?.discoveryState = "\(state)"
         }
         browser.start(queue: .main)
         self.browser = browser
@@ -423,6 +425,14 @@ final class ClientAgent {
     }
 
     var isConnected: Bool { connected }
+
+    /// For the settings window (SetupWindow.swift): what is known about the way to the anchor.
+    var linkFacts: LinkFacts {
+        var found: String?
+        if case let .service(name, _, _, _)? = discovered { found = name }
+        return LinkFacts(name: config.name, connected: connected, anchorName: anchorName, discovered: found,
+                         failures: lastFailure.isEmpty ? [] : [lastFailure], discovery: discoveryState)
+    }
 }
 
 /// The link to the anchor, as wake-together uses it (WakeTogether.swift).

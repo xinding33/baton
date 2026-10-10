@@ -192,6 +192,22 @@ final class Anchor {
         saveConfig()
     }
 
+    // For the settings window (SetupWindow.swift).
+
+    var currentConfig: Config { config }
+    var handoffRunning: Bool { handoffInProgress != nil }
+
+    /// Changes settings the layout editor does not cover. The file is rewritten whole from this
+    /// copy, so whatever changes it goes through here or `apply`.
+    func updateConfig(_ edit: (inout Config) -> Void) {
+        edit(&config)
+        saveConfig()
+    }
+
+    func pairedKeyboards(completion: @escaping ([BluetoothKeyboard]?) -> Void) {
+        mover.pairedKeyboards(completion: completion)
+    }
+
     // MARK: Focus changes
 
     private func motion(_ flags: CGEventFlags = []) -> Motion {
