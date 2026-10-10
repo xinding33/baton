@@ -6,6 +6,47 @@ edge of one Mac's screen onto the next Mac's, and typing follows it.
 One Mac, the **anchor**, has the mouse and keyboard attached. It decides which machine the cursor
 is on and forwards input to the others (**clients**), which replay it.
 
+## Setting up
+
+Open Baton on each Mac. A Mac that has not been set up shows a window that asks for:
+
+- **a name** for this Mac, one word such as `studio` or `laptop`. It is offered from the Mac's
+  own name and has to be different on every Mac;
+- **whether this Mac has the mouse and keyboard** (the anchor) or is controlled from another Mac
+  (a client);
+- **the pairing code.** Press Generate on the first Mac, then type the code into the others, or
+  carry it over with Copy. A mistyped code is caught as you type it;
+- **the permissions** Baton still needs on this Mac, each with its state and a button that opens
+  the right pane of System Settings › Privacy & Security.
+
+| Mac | Permissions |
+|---|---|
+| anchor | Accessibility, Bluetooth |
+| clients | Accessibility, Local Network, Bluetooth |
+
+Bluetooth is only used with a shared Bluetooth keyboard. macOS does not let an app read its Local
+Network setting, so a client shows it as allowed once it has found the anchor, and as off when
+the network refuses it.
+
+**Start Baton** writes the settings and begins sharing; nothing runs before that. The window
+stays open as **Settings…**, which is in the menu bar item afterwards, and which opening Baton
+again also brings up. It shows how sharing is going and what is in its way: a pairing code that
+does not match the other Mac's, Local Network access that is off, a Mac that has the anchor's
+name. Changing the name, the role, the code or the shared keyboard there restarts Baton on that
+Mac.
+
+A Mac that connects to the anchor for the first time has no place next to the others yet, and
+the cursor cannot reach it. The anchor's menu says so; **Arrange Macs…** shows it at the right,
+ready to be dragged to where it sits.
+
+**Open at Login**, in the menu and ticked in the setup window, starts Baton when you log in and
+again if it ever crashes. It is a launch agent,
+`~/Library/LaunchAgents/com.xinding.baton.plist`, which Baton writes and removes itself, and
+points at its new place if the app is moved. Switching it off takes effect at the next login.
+
+Settings are kept in `~/Library/Application Support/Baton`: `config.json`, and `secret.key` with
+`pairing.code`, the code it came from.
+
 ## Layout
 
 Each machine is placed relative to another in the anchor's
@@ -46,8 +87,9 @@ on one Mac apart.
 
 ## The shared keyboard
 
-With `keyboardAddress` (the keyboard's Bluetooth address) in the anchor's config, Baton tracks
-which Mac the keyboard is attached to. Keys typed while the cursor is on a different Mac are
+Choose the keyboard under **Shared keyboard** in the anchor's Settings…, which lists the Bluetooth
+keyboards paired with that Mac. It is kept as `keyboardAddress`, the keyboard's Bluetooth
+address, in the anchor's config. Baton then tracks which Mac the keyboard is attached to. Keys typed while the cursor is on a different Mac are
 forwarded there, whichever Mac the keyboard is on.
 
 With `keyboardFollows` on, the keyboard's Bluetooth connection itself moves to the Mac the cursor
@@ -215,7 +257,7 @@ While versions differ, each menu says which Mac has which.
 A development build never updates itself: `scripts/deploy.sh` installs those, and its Macs run
 exactly what was deployed until the next deploy. `Baton update-check` says which kind a copy is.
 
-## Build and install
+## Build and deploy
 
 ```sh
 swift test
@@ -228,13 +270,9 @@ bash scripts/build.sh        # just build dist/Baton.app, ad-hoc signed
 them. To put them on a release instead, which then keeps itself up to date, unzip the release
 and run `BATON_APP=path/to/Baton.app scripts/deploy.sh`.
 
-Each Mac needs these granted once in
-System Settings → Privacy & Security:
-
-| Mac | Permissions |
-|---|---|
-| anchor | Accessibility, Bluetooth |
-| clients | Accessibility, Local Network, Bluetooth |
+It gives every Mac the same key, and sets a Mac up without the setup window if that Mac has no
+config yet. Open at Login is left as each Mac has it: where it was switched off, the new build is
+started without a launch agent, and `BATON_LOGIN=on scripts/deploy.sh` switches it back on.
 
 ### Release
 
@@ -258,9 +296,12 @@ To produce the same notarized ZIP locally, save notary credentials once with
 
 - **⌃⌥⌘⎋** brings the cursor back to the anchor.
 - **⌃⌥⌘W** wakes every Mac's display.
-- The menu bar item (⇄) shows where the cursor is and can pause sharing.
-- **Hide Menu Bar Icon…** removes the item on that Mac while Baton keeps running. Open Baton again
-  (`open ~/Applications/Baton.app`), or run `Baton ctl icon show`, to bring it back.
+- The menu bar item (⇄) shows where the cursor is and can pause sharing. What needs attention on
+  that Mac, such as a missing permission, is at the top of its menu.
+- **Settings…** opens the window described under Setting up, and **Open at Login** switches the
+  launch agent.
+- **Hide Menu Bar Icon…** removes the item on that Mac while Baton keeps running. Open Baton
+  again, or run `Baton ctl icon show`, to bring it back.
 - `Baton ctl status` prints the agent's state; `Baton ctl home|pause|resume` control it.
 - `Baton ctl keyboard` shows where the keyboard is; `keyboard move <machine>` hands it over and
   `keyboard follow on|off` switches following.
@@ -283,6 +324,11 @@ To produce the same notarized ZIP locally, save notary credentials once with
   Mac to that release, and `update auto on|off` switches automatic updates.
 - `Baton update-check` prints what kind of copy this is, how it is signed, whether it updates
   itself and the latest release. It works without the agent and changes nothing.
+- `Baton ctl settings` prints what the settings window shows, without the code; `settings show`
+  opens it and `settings snapshot <png path>` draws it to a file. `settings name|role|code|
+  generate|keyboard|login ...` fill it in and `settings apply` presses its button.
+- `Baton login` says whether Open at Login is on, and `login on|off` switches it. It works
+  without the agent.
 - `Baton ctl sim move <dx> <dy>` (also `enter`, `click`, `key`, `scroll`) feeds synthetic input
   through the anchor, for testing without touching the mouse. On a client, `sim local` stands in
   for a touch of its trackpad and `sim sleep` goes through what it does before sleeping.
@@ -291,9 +337,18 @@ Logs are in `~/Library/Logs/Baton/baton.log`.
 
 ## Security
 
-Machines authenticate with a shared secret (`secret.key`, created by the first deploy and copied
-over SSH). Control traffic uses TLS with that secret as a pre-shared key; cursor positions travel
-as datagrams sealed with a per-session ChaCha20-Poly1305 key handed out over the TLS link.
+Machines authenticate with a shared secret, `secret.key`: 32 bytes that every Mac derives from
+the pairing code (HKDF-SHA256), or that `scripts/deploy.sh` creates and copies over SSH. Control
+traffic uses TLS with that secret as a pre-shared key; cursor positions travel as datagrams sealed
+with a per-session ChaCha20-Poly1305 key handed out over the TLS link.
+
+A pairing code is 25 letters and digits. 24 of them are random, which is 120 bits, and the last
+one catches typing mistakes. It is that long because the key is all that protects the link: what
+you type on one Mac for another, passwords included, travels under it. The handshake has no key
+exchange of its own, so someone who records it can test guesses against the recording for as long
+as they like, and a code found later would open what was recorded earlier. No limit on attempts
+can stop that; only a code too large to search can, and 120 bits is. Anyone who has the code, or
+can read `secret.key`, can control every paired Mac, so the folder is readable by its user alone.
 
 An update is fetched from GitHub over HTTPS, by each Mac for itself; the Macs only tell each
 other which version. It is installed only if it is the release build it claims to be and its

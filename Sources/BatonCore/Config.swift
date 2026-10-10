@@ -92,14 +92,14 @@ public enum ConfigError: Error, CustomStringConvertible {
     }
 }
 
-public func loadConfig() throws -> Config {
-    guard let data = try? Data(contentsOf: Paths.config) else { throw ConfigError.missing(Paths.config) }
+public func loadConfig(from url: URL = Paths.config) throws -> Config {
+    guard let data = try? Data(contentsOf: url) else { throw ConfigError.missing(url) }
     return try JSONDecoder().decode(Config.self, from: data)
 }
 
 /// The shared secret every paired machine holds, hex-encoded on disk.
-public func loadSecret() throws -> Data {
-    guard let text = try? String(contentsOf: Paths.secret, encoding: .utf8) else { throw ConfigError.missing(Paths.secret) }
+public func loadSecret(from url: URL = Paths.secret) throws -> Data {
+    guard let text = try? String(contentsOf: url, encoding: .utf8) else { throw ConfigError.missing(url) }
     let hex = text.trimmingCharacters(in: .whitespacesAndNewlines)
     var bytes = Data()
     var index = hex.startIndex

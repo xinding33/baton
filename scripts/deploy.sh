@@ -5,6 +5,9 @@
 # What it builds is a development build: it never replaces itself with a release, so the Macs
 # run exactly what was deployed. BATON_APP=<path to a Baton.app> installs that bundle instead,
 # e.g. an unzipped release, which from then on keeps every Mac up to date by itself.
+#
+# A Mac can also be set up by opening Baton on it. Open at Login is left as each Mac has it;
+# see install-agent.sh.
 set -euo pipefail
 # Taken relative to where the script was called from, not to the repository.
 if [ -n "${BATON_APP:-}" ]; then BATON_APP="$(cd "$BATON_APP" && pwd)"; fi
@@ -54,6 +57,10 @@ for machine in "${MACHINES[@]}"; do
         ssh "$host" "mkdir -p Applications '$SUPPORT' && chmod 700 '$SUPPORT'"
         rsync -a --delete "$APP/" "$host:Applications/Baton.app/"
         ssh "$host" "umask 077 && cat > '$SUPPORT/secret.key'" < "$HOME/$SUPPORT/secret.key"
-        ssh "$host" bash -s "$name" "$role" < scripts/install-agent.sh
+        # The pairing code the key came from, if it came from one, so every Mac can show it.
+        if [ -f "$HOME/$SUPPORT/pairing.code" ]; then
+            ssh "$host" "umask 077 && cat > '$SUPPORT/pairing.code'" < "$HOME/$SUPPORT/pairing.code"
+        fi
+        ssh "$host" "BATON_LOGIN='${BATON_LOGIN:-}' bash -s '$name' '$role'" < scripts/install-agent.sh
     fi
 done

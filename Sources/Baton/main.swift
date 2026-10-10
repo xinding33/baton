@@ -12,18 +12,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var arrangementWindow: ArrangementWindowController?
     private var displayMenu: DisplayMenu?
     private var clipboard: SharedClipboard?
+    private let settings = SetupWindowController()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        let config: Config
-        let secret: Data
-        do {
-            try FileManager.default.createDirectory(at: Paths.support, withIntermediateDirectories: true)
-            config = try loadConfig()
-            secret = try loadSecret()
-        } catch {
-            log("cannot start: \(error)")
-            exit(78)
-        }
+        try? FileManager.default.createDirectory(at: Paths.support, withIntermediateDirectories: true)
+        control = ControlServer { [weak self] words in self?.command(words) ?? "" }
+        control?.start()
+        // A Mac that is not set up yet shows the setup window, and starts once that is done.
+        settings.whenSetUp { [weak self] config, secret in self?.start(config, secret) }
+    }
+
+    private func start(_ config: Config, _ secret: Data) {
         log("Baton starting as \(config.role.rawValue) \"\(config.name)\"")
         // Input has to flow without timer coalescing or App Nap.
         activity = ProcessInfo.processInfo.beginActivity(options: [.userInitiatedAllowingIdleSystemSleep, .latencyCritical], reason: "Sharing input")
@@ -72,23 +71,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         ScrollReverser.shared.onStateChanged = { [weak self] in self?.refreshMenu() }
         ScrollReverser.shared.start(forwarding: { [anchor] in anchor.map { $0.focus != .local } ?? false })
 
-        control = ControlServer { [weak self] words in self?.command(words) ?? "" }
-        control?.start()
+        settings.attach(anchor: anchor, client: client)
+        settings.onShowArrangement = { [weak self] in self?.showArrangement() }
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         refreshMenu()
     }
 
-    /// Opening Baton while it is running shows the icon again.
+    /// Opening Baton while it is running shows the icon again, and its settings.
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows: Bool) -> Bool {
         MenuIcon.setHidden(false)
         refreshMenu()
+        settings.show()
         return false
     }
 
     private func command(_ words: [String]) -> String {
         switch words.first {
         case "status", nil:
-            return anchor?.status() ?? client?.status() ?? ""
+            return anchor?.status() ?? client?.status() ?? settings.command([])
+        case "settings":
+            return settings.command(Array(words.dropFirst()))
+        case "opened":
+            _ = applicationShouldHandleReopen(NSApp, hasVisibleWindows: false)
+            return "shown"
         case "home":
             anchor?.goLocal(at: nil)
             return anchor?.status() ?? "only the anchor moves the cursor"
@@ -123,7 +128,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             refreshMenu()
             return "the menu bar icon is \(MenuIcon.isHidden ? "hidden" : "shown")"
         default:
-            return "commands: status, home, pause, resume, sim, arrange, keyboard, scroll, displays, wake, clipboard, update, icon"
+            return "commands: status, home, pause, resume, sim, arrange, keyboard, scroll, displays, wake, clipboard, update, icon, settings"
         }
     }
 
@@ -186,6 +191,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         clipboard?.menuItems().forEach(menu.addItem)
         Updates.shared.addMenuItems(to: menu)
         menu.addItem(.separator())
+        settings.addItems(to: menu)
         menu.addItem(withTitle: "Hide Menu Bar Icon…", action: #selector(hideIcon), keyEquivalent: "").target = self
         menu.addItem(withTitle: "Quit Baton", action: #selector(quit), keyEquivalent: "").target = self
         statusItem.button?.title = title
@@ -229,10 +235,14 @@ if arguments.first == "display-check" {
 if arguments.first == "update-check" {
     exit(runUpdateCheck(Array(arguments.dropFirst())))
 }
+if arguments.first == "login" {
+    exit(LoginItem().run(Array(arguments.dropFirst())))
+}
 
 // Opened by hand while the agent is already running: that is how a hidden menu bar icon comes
-// back. A second copy must not start, or it would take the agent's port and control socket.
-if arguments.isEmpty, controlClient(["icon", "show"], quiet: true) == 0 {
+// back, and how its settings are reached. A second copy must not start, or it would take the
+// agent's port and control socket. launchd starting its job is nobody asking for a window.
+if arguments.isEmpty, controlClient([Relaunch.isLaunchdJob ? "status" : "opened"], quiet: true) == 0 {
     exit(0)
 }
 
