@@ -9,16 +9,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem?
     private var activity: NSObjectProtocol?
     private var terminationSource: DispatchSourceSignal?
-    private var arrangementWindow: ArrangementWindowController?
+    private var arrangement: ArrangementPane?
+    private var keyboard: KeyboardSettings?
     private var displayMenu: DisplayMenu?
     private var clipboard: SharedClipboard?
     private let settings = SetupWindowController()
+    private let window = SettingsWindowController()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         try? FileManager.default.createDirectory(at: Paths.support, withIntermediateDirectories: true)
         control = ControlServer { [weak self] words in self?.command(words) ?? "" }
         control?.start()
         // A Mac that is not set up yet shows the setup window, and starts once that is done.
+        settings.host = window
+        window.setPanes([settings])
         settings.whenSetUp { [weak self] config, secret in self?.start(config, secret) }
     }
 
@@ -42,7 +46,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 exit(1)
             }
             self.anchor = anchor
-            arrangementWindow = ArrangementWindowController(anchor: anchor)
+            arrangement = ArrangementPane(anchor: anchor)
+            keyboard = KeyboardSettings(anchor: anchor)
+            keyboard?.onStateChanged = { [weak self] in self?.refreshMenu() }
             WakeTogether.shared.start(as: config, links: anchor.server)
             clipboard.onSettingChanged = { [weak anchor] in anchor?.setShareClipboard($0) }
         case .client:
@@ -72,7 +78,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         ScrollReverser.shared.start(forwarding: { [anchor] in anchor.map { $0.focus != .local } ?? false })
 
         settings.attach(anchor: anchor, client: client)
-        settings.onShowArrangement = { [weak self] in self?.showArrangement() }
+        settings.otherAttention = { [weak clipboard] in [clipboard?.attention].compactMap { $0 } }
+        settings.onMenuIconChanged = { [weak self] in self?.refreshMenu() }
+        // General first, then what only the anchor decides, then each feature's own pane.
+        var panes: [SettingsPane?] = [settings, arrangement, keyboard?.pane]
+        panes += [ScrollReverser.shared.settingsPane, displayMenu?.settingsPane, WakeTogether.shared.settingsPane, clipboard.settingsPane, Updates.shared.settingsPane]
+        window.setPanes(panes.compactMap { $0 })
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         refreshMenu()
     }
@@ -81,7 +92,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows: Bool) -> Bool {
         MenuIcon.setHidden(false)
         refreshMenu()
-        settings.show()
+        window.show()
         return false
     }
 
@@ -90,7 +101,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case "status", nil:
             return anchor?.status() ?? client?.status() ?? settings.command([])
         case "settings":
-            return settings.command(Array(words.dropFirst()))
+            return window.command(Array(words.dropFirst()), setup: settings.command)
         case "opened":
             _ = applicationShouldHandleReopen(NSApp, hasVisibleWindows: false)
             return "shown"
@@ -122,25 +133,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return clipboard?.command(Array(words.dropFirst())) ?? ""
         case "update":
             return Updates.shared.command(Array(words.dropFirst()))
+        case "menu":
+            return menuReport()
         case "icon":
             guard words.count == 2, ["show", "hide"].contains(words[1]) else { return "usage: icon show|hide" }
             MenuIcon.setHidden(words[1] == "hide")
             refreshMenu()
             return "the menu bar icon is \(MenuIcon.isHidden ? "hidden" : "shown")"
         default:
-            return "commands: status, home, pause, resume, sim, arrange, keyboard, scroll, displays, wake, clipboard, update, icon, settings"
+            return "commands: status, home, pause, resume, sim, arrange, keyboard, scroll, displays, wake, clipboard, update, icon, menu, settings"
         }
     }
 
     /// `arrange show` opens the editor; `snapshot` and `drop` exercise it without the mouse.
     private func arrange(_ words: [String]) -> String {
-        guard let anchor, let arrangementWindow else { return "only the anchor arranges machines" }
+        guard let anchor, let arrangement else { return "only the anchor arranges machines" }
         switch words.first {
         case "show":
-            arrangementWindow.show()
+            window.show(arrangement.id)
         case "snapshot":
             guard words.count == 2 else { return "usage: arrange snapshot <png path>" }
-            let view = arrangementWindow.makeView(frame: NSRect(x: 0, y: 0, width: 720, height: 408))
+            let view = arrangement.makeView(frame: NSRect(x: 0, y: 0, width: 720, height: 408))
             return view.writeSnapshot(to: URL(fileURLWithPath: words[1])) ? "wrote \(words[1])" : "could not write \(words[1])"
         case "drop":
             guard words.count == 4, let x = Double(words[2]), let y = Double(words[3]) else { return "usage: arrange drop <machine> <x> <y>" }
@@ -153,68 +166,65 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return anchor.status()
     }
 
-    private func refreshMenu() {
-        arrangementWindow?.refresh()
-        guard let statusItem else { return }
-        let menu = NSMenu()
-        var title = "⇄"
+    /// What the menu is made from: where things stand on this Mac right now.
+    private var menuFacts: StatusMenu.Facts {
+        var facts = StatusMenu.Facts(role: anchor != nil ? .anchor : .client)
         if let anchor {
-            if case let .remote(name) = anchor.focus { title = "⇄ \(name)" }
-            if anchor.paused { title = "⇄ paused" }
-            let peers = anchor.peerNames
-            menu.addItem(withTitle: peers.isEmpty ? "No other Macs connected" : "Connected: \(peers.joined(separator: ", "))", action: nil, keyEquivalent: "")
-            menu.addItem(withTitle: "Bring cursor home (⌃⌥⌘⎋)", action: #selector(home), keyEquivalent: "").target = self
-            menu.addItem(withTitle: anchor.paused ? "Resume sharing" : "Pause sharing", action: #selector(togglePause), keyEquivalent: "").target = self
-            menu.addItem(withTitle: "Arrange Macs…", action: #selector(showArrangement), keyEquivalent: "").target = self
-            menu.addItem(.separator())
-            menu.addItem(withTitle: "Keyboard is on: \(anchor.keyboardOwner ?? "no Mac")", action: nil, keyEquivalent: "")
-            let move = NSMenuItem(title: "Move keyboard to", action: nil, keyEquivalent: "")
-            let destinations = NSMenu()
-            for name in anchor.onlineMachines.sorted() where name != anchor.keyboardOwner {
-                let item = destinations.addItem(withTitle: name, action: #selector(moveKeyboard(_:)), keyEquivalent: "")
-                item.target = self
-                item.representedObject = name
-            }
-            move.submenu = destinations
-            menu.addItem(move)
-            let follow = menu.addItem(withTitle: "Keyboard follows the cursor", action: #selector(toggleKeyboardFollows), keyEquivalent: "")
-            follow.target = self
-            follow.state = anchor.keyboardFollows ? .on : .off
+            facts.peers = anchor.peerNames
+            if case let .remote(name) = anchor.focus { facts.focus = name }
+            facts.paused = anchor.paused
+            facts.sharesKeyboard = anchor.currentConfig.keyboardAddress != nil
+            facts.keyboardOwner = anchor.keyboardOwner
+            facts.online = anchor.onlineMachines.sorted()
         } else if let client {
-            title = client.isConnected ? (client.active ? "⇄ ●" : "⇄") : "⇄ ?"
-            menu.addItem(withTitle: client.isConnected ? "Connected to the anchor" : "Looking for the anchor…", action: nil, keyEquivalent: "")
+            facts.connected = client.isConnected
+            facts.active = client.active
         }
-        ScrollReverser.shared.addMenuItems(to: menu)
-        displayMenu?.addItems(to: menu)
-        WakeTogether.shared.addMenuItems(to: menu)
-        menu.addItem(.separator())
-        clipboard?.menuItems().forEach(menu.addItem)
-        Updates.shared.addMenuItems(to: menu)
-        menu.addItem(.separator())
-        settings.addItems(to: menu)
-        menu.addItem(withTitle: "Hide Menu Bar Icon…", action: #selector(hideIcon), keyEquivalent: "").target = self
-        menu.addItem(withTitle: "Quit Baton", action: #selector(quit), keyEquivalent: "").target = self
-        statusItem.button?.title = title
-        statusItem.menu = menu
+        facts.attention = settings.attention()
+        facts.canWakeAll = WakeTogether.shared.canWakeAll
+        facts.wakeHotKey = WakeTogether.shared.hotKeyDisplay
+        facts.displaysOff = displayMenu?.displaysOff ?? []
+        facts.update = Updates.shared.menuLine
+        return facts
+    }
+
+    /// Redraws the menu, and the Settings pane that is on show: called whenever something
+    /// either of them shows has changed.
+    private func refreshMenu() {
+        window.refresh()
+        guard let statusItem else { return }
+        let facts = menuFacts
+        statusItem.button?.title = StatusMenu.title(facts)
+        statusItem.menu = MenuBarMenu.make(StatusMenu.items(facts)) { [weak self] in self?.chose($0) }
         // Never hidden while it is the only sign that a permission is missing.
         statusItem.isVisible = !MenuIcon.isHidden || !AXIsProcessTrusted()
     }
 
-    @objc private func home() { anchor?.goLocal(at: nil) }
-    @objc private func showArrangement() { arrangementWindow?.show() }
-    @objc private func moveKeyboard(_ sender: NSMenuItem) {
-        guard let name = sender.representedObject as? String else { return }
-        anchor?.moveKeyboard(to: name)
+    private func chose(_ choice: MenuBarMenu.Choice) {
+        switch choice {
+        case .home: anchor?.goLocal(at: nil)
+        case let .setPaused(paused): anchor?.setPaused(paused)
+        case let .moveKeyboard(name): _ = anchor?.moveKeyboard(to: name)
+        case .wakeAll: WakeTogether.shared.wakeAll()
+        case let .reconnect(displays): displays.forEach { displayMenu?.reconnect($0) }
+        case let .settings(pane): window.show(pane)
+        case .quit: quit()
+        }
     }
 
-    @objc private func toggleKeyboardFollows() { anchor.map { $0.setKeyboardFollows(!$0.keyboardFollows) } }
-    @objc private func togglePause() { anchor.map { $0.setPaused(!$0.paused) } }
-    @objc private func hideIcon() {
-        guard MenuIcon.confirmHiding() else { return }
-        MenuIcon.setHidden(true)
-        refreshMenu()
+    /// `ctl menu`: the menu as it stands, a line for each item.
+    private func menuReport() -> String {
+        guard let menu = statusItem?.menu else { return "no menu yet: Baton is not set up" }
+        func lines(_ menu: NSMenu, indent: String) -> [String] {
+            menu.items.flatMap { item -> [String] in
+                if item.isSeparatorItem { return ["\(indent)---"] }
+                return ["\(indent)\(item.title)\(item.action == nil && item.submenu == nil ? "  [greyed out]" : "")"] + (item.submenu.map { lines($0, indent: indent + "    ") } ?? [])
+            }
+        }
+        return lines(menu, indent: "").joined(separator: "\n")
     }
-    @objc private func quit() {
+
+    private func quit() {
         anchor?.goLocal(at: nil)
         // Exit cleanly so launchd leaves the agent stopped. Displays that are off come back first.
         guard let displayMenu else { exit(0) }

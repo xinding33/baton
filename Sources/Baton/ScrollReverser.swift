@@ -98,27 +98,25 @@ final class ScrollReverser: NSObject {
         onStateChanged?()
     }
 
-    @objc private func toggleEnabled() { change { $0.enabled.toggle() } }
-    @objc private func toggleVertical() { change { $0.vertical.toggle() } }
-    @objc private func toggleHorizontal() { change { $0.horizontal.toggle() } }
+    /// The Mouse pane of Settings.
+    private(set) lazy var settingsPane = FormPane(id: StatusMenu.Pane.mouse, title: "Mouse", symbol: "computermouse") { [unowned self] in
+        ScrollReverser.rows(for: self.settings, tapActive: self.tap.isActive) { [unowned self] in self.change($0) }
+    }
 
-    func addMenuItems(to menu: NSMenu) {
-        menu.addItem(.separator())
-        let toggles: [(String, Selector, Bool, Int)] = [
-            ("Reverse Mouse Wheel", #selector(toggleEnabled), settings.enabled, 0),
-            ("Vertical", #selector(toggleVertical), settings.vertical, 1),
-            ("Horizontal", #selector(toggleHorizontal), settings.horizontal, 1),
+    /// The pane's rows for `settings`. `change` is handed what a click alters.
+    static func rows(for settings: ScrollSettings, tapActive: Bool, change: @escaping ((inout ScrollSettings) -> Void) -> Void) -> [SettingsRow] {
+        var rows: [SettingsRow] = [
+            .header("Mouse wheel"),
+            .toggle("Reverse the mouse wheel", on: settings.enabled, detail: "Notched wheels scroll the traditional way. Trackpads and the Magic Mouse are left alone.") { on in
+                change { $0.enabled = on }
+            },
+            // The axes are greyed out while reversing is off.
+            .toggle("Vertical", on: settings.vertical, enabled: settings.enabled, indent: 1) { on in change { $0.vertical = on } },
+            .toggle("Horizontal", on: settings.horizontal, enabled: settings.enabled, indent: 1) { on in change { $0.horizontal = on } },
         ]
-        for (title, action, on, level) in toggles {
-            // An item without an action is greyed out, as the axes are while reversing is off.
-            let item = menu.addItem(withTitle: title, action: level == 0 || settings.enabled ? action : nil, keyEquivalent: "")
-            item.target = self
-            item.state = on ? .on : .off
-            item.indentationLevel = level
-        }
-        if let note = settings.note(tapActive: tap.isActive) {
-            menu.addItem(withTitle: note, action: nil, keyEquivalent: "")
-        }
+        if let note = settings.note(tapActive: tapActive) { rows.append(.note(note)) }
+        rows.append(.text("For this Mac only. A scroll is reversed on the Mac it lands on, so each Mac has its own switch."))
+        return rows
     }
 
     // MARK: Control commands

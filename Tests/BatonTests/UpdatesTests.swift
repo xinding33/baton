@@ -33,10 +33,13 @@ final class UpdatesTests: XCTestCase {
         (try? JSONSerialization.jsonObject(with: Data(updates.command([]).utf8))) as? [String: Any] ?? [:]
     }
 
-    private func items(_ updates: Updates) -> [NSMenuItem] {
-        let menu = NSMenu()
-        updates.addMenuItems(to: menu)
-        return menu.items.filter { !$0.isSeparatorItem }
+    /// What can be pressed in the Updates pane: Check for Updates…, then the automatic switch.
+    private func controls(_ updates: Updates) -> [SettingsRow] {
+        updates.settingsPane.rows.filter { $0.act != nil }
+    }
+
+    private func notes(_ updates: Updates) -> [String] {
+        updates.settingsPane.rows.filter { $0.kind == .note(warning: true) }.map(\.title)
     }
 
     /// An anchor and a client on this Mac, each with its own updater and nothing else.
@@ -65,18 +68,18 @@ final class UpdatesTests: XCTestCase {
         XCTAssertEqual(((status(anchor)["macs"] as? [String: Any])?["mini"] as? [String: Any])?["version"] as? String, "1.2.0")
         XCTAssertEqual(status(anchor)["sharingInput"] as? [String], ["mini"])
 
-        XCTAssertEqual(items(client).map(\.title), ["Check for Updates…", "Install Updates Automatically"])
-        XCTAssertEqual(items(anchor).map(\.title), ["Check for Updates…", "Install Updates Automatically"])
-        let toggle = items(client)[1]
-        XCTAssertEqual(toggle.state, .on, "on by default")
-        _ = toggle.target?.perform(try XCTUnwrap(toggle.action))
+        XCTAssertEqual(controls(client).map(\.title), ["Check for Updates…", "Install updates automatically"])
+        XCTAssertEqual(controls(anchor).map(\.title), ["Check for Updates…", "Install updates automatically"])
+        XCTAssertEqual(controls(client)[1].isOn, true, "on by default")
+        XCTAssertNil(client.menuLine, "nothing for the menu to say while every Mac is on one version")
+        XCTAssertEqual(client.settingsPane.rows.press("Install updates automatically"), "pressed “Install updates automatically”")
         wait("the anchor's switch") { self.status(anchor)["automatic"] as? Bool == false }
-        wait("the client's menu") { self.items(client)[1].state == .off }
+        wait("the client's pane") { self.controls(client)[1].isOn == false }
         let saved = try JSONSerialization.jsonObject(with: Data(contentsOf: UpdatesTests.home.appendingPathComponent("update.json"))) as? [String: Any]
         XCTAssertEqual(saved?["automatic"] as? Bool, false)
 
         XCTAssertEqual(anchor.command(["auto", "on"]), "install updates automatically: true")
-        wait("the client's menu") { self.items(client)[1].state == .on }
+        wait("the client's pane") { self.controls(client)[1].isOn == true }
         XCTAssertEqual(client.command(["auto", "off"]), "the anchor's switch counts for every Mac; run this there")
         XCTAssertEqual(anchor.command(["install", "1.2.0"]), "This Mac already has version 1.2.0.")
         XCTAssertEqual(client.command(["install", "1.1"]), "This Mac already has version 1.2.0.")
@@ -88,14 +91,17 @@ final class UpdatesTests: XCTestCase {
         let (anchor, client) = pair(anchor: Build(version: try XCTUnwrap(Version("1.3.0")), kind: .development),
                                     client: Build(version: try XCTUnwrap(Version("1.2.0")), kind: .release))
         wait("the update link") { self.status(client)["anchor"] as? String == "studio, Baton 1.3.0 (development build)" }
-        wait("the anchor's menu") { self.items(anchor).count == 3 }
-        XCTAssertEqual(items(anchor).map(\.title), ["mini has Baton 1.2.0, this Mac 1.3.0", "Check for Updates…", "Install Updates Automatically"])
-        XCTAssertEqual(items(client).map(\.title), ["studio has Baton 1.3.0, this Mac 1.2.0", "Check for Updates…", "Install Updates Automatically"])
+        // Each menu says which Mac has which version, and so does the pane.
+        wait("the anchor's menu") { anchor.menuLine != nil }
+        XCTAssertEqual(anchor.menuLine, "mini has Baton 1.2.0, this Mac 1.3.0")
+        XCTAssertEqual(client.menuLine, "studio has Baton 1.3.0, this Mac 1.2.0")
+        XCTAssertEqual(notes(anchor), ["mini has Baton 1.2.0, this Mac 1.3.0. Macs on different versions cannot share input."])
+        XCTAssertEqual(notes(client), ["studio has Baton 1.3.0, this Mac 1.2.0. Macs on different versions cannot share input."])
         for updates in [anchor, client] {
-            let toggle = items(updates)[2]
-            XCTAssertEqual(toggle.state, .off)
-            XCTAssertNil(toggle.action, "nothing to switch while the anchor does not update itself")
-            XCTAssertNotNil(items(updates)[1].action)
+            let toggle = controls(updates)[1]
+            XCTAssertEqual(toggle.isOn, false)
+            XCTAssertFalse(toggle.enabled, "nothing to switch while the anchor does not update itself")
+            XCTAssertTrue(controls(updates)[0].enabled)
         }
         XCTAssertEqual(status(anchor)["updatesItself"] as? String, "This copy was built from source, so it doesn't update itself.")
         XCTAssertEqual(anchor.command(["install", "9.0.0"]), "This Mac runs a development build, which doesn't update itself.")

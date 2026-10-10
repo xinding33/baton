@@ -92,7 +92,7 @@ final class DisplayToggle {
         }
     }
 
-    /// Carries out a menu action. The outcome shows up in `panel`.
+    /// Carries out what Settings or the menu asked for. The outcome shows up in `panel`.
     func perform(_ action: DisplayAction) {
         // Let the menu close before the screens rearrange.
         enqueue(after: 0.1) { [self] in
@@ -319,10 +319,8 @@ private func watchdogLog(_ folder: URL) -> (String) -> Void {
 /// by itself for a while under `BATON_HOME`, where it has its own files and leaves every display
 /// alone, and gives it the command as `ctl displays` would.
 func runDisplayCheck(_ words: [String]) -> Int32 {
-    func show(_ menu: NSMenu) {
-        for item in menu.items where !item.isSeparatorItem {
-            print("  \(item.state == .on ? "✓" : " ") \(item.title)\(item.action == nil ? "" : "  [clickable]")")
-        }
+    func show(_ rows: [SettingsRow]) {
+        print(rows.map(\.line).joined(separator: "\n"))
     }
     if words.first == "run" {
         guard ProcessInfo.processInfo.environment["BATON_HOME"] != nil else {
@@ -331,10 +329,8 @@ func runDisplayCheck(_ words: [String]) -> Int32 {
         }
         var displayMenu: DisplayMenu?
         displayMenu = DisplayMenu(anchor: nil, client: nil) {
-            let menu = NSMenu()
-            displayMenu?.addItems(to: menu)
-            print("menu:")
-            show(menu)
+            print("settings:")
+            show(displayMenu?.settingsPane.rows ?? [])
         }
         if words.count > 2 {
             DispatchQueue.main.asyncAfter(deadline: .now() + 1) { print(displayMenu?.command(Array(words.dropFirst(2))) ?? "") }
@@ -358,9 +354,7 @@ func runDisplayCheck(_ words: [String]) -> Int32 {
         guard FileManager.default.fileExists(atPath: theirs.url.path) else { continue }
         print("remembered by Wink in \(folder.lastPathComponent): \(json((try? theirs.load()) ?? []))")
     }
-    print("menu:")
-    let menu = NSMenu()
-    DisplayMenu.add(controller.panel(unavailable: DisplayToggle.reasonToStandDown), on: nil, to: menu, target: nil)
-    show(menu)
+    print("settings:")
+    show(DisplayMenu.rows(for: controller.panel(unavailable: DisplayToggle.reasonToStandDown)) { _ in })
     return controller.backend.available ? 0 : 1
 }

@@ -158,20 +158,19 @@ final class ArrangementView: NSView {
     override func resetCursorRects() {
         addCursorRect(bounds, cursor: .openHand)
     }
-
-    /// Renders the view to a PNG, for checking its appearance without opening the window.
-    func writeSnapshot(to url: URL) -> Bool {
-        guard let bitmap = bitmapImageRepForCachingDisplay(in: bounds) else { return false }
-        cacheDisplay(in: bounds, to: bitmap)
-        guard let data = bitmap.representation(using: .png, properties: [:]) else { return false }
-        return (try? data.write(to: url)) != nil
-    }
 }
 
-final class ArrangementWindowController: NSObject, NSWindowDelegate {
+/// The Arrange pane of the anchor's Settings: the canvas, and a line on how to use it.
+final class ArrangementPane: SettingsPane {
+    let id = StatusMenu.Pane.arrange
+    let title = "Arrange"
+    let symbol = "rectangle.3.group"
+    private static let size = NSSize(width: 720, height: 460)
+    private static let footerHeight: CGFloat = 52
+
     private let anchor: Anchor
-    private var window: NSWindow?
-    private var view: ArrangementView?
+    private var canvas: ArrangementView?
+    private var content: NSView?
 
     init(anchor: Anchor) {
         self.anchor = anchor
@@ -185,42 +184,32 @@ final class ArrangementWindowController: NSObject, NSWindowDelegate {
         return view
     }
 
-    func show() {
-        if window == nil {
-            let size = NSSize(width: 720, height: 460)
-            let window = NSWindow(contentRect: NSRect(origin: .zero, size: size), styleMask: [.titled, .closable, .resizable, .miniaturizable], backing: .buffered, defer: false)
-            window.title = "Arrange Macs"
-            window.isReleasedWhenClosed = false
-            window.contentMinSize = NSSize(width: 480, height: 320)
-            window.delegate = self
-
-            let footerHeight: CGFloat = 52
-            let content = NSView(frame: NSRect(origin: .zero, size: size))
-            let view = makeView(frame: NSRect(x: 0, y: footerHeight, width: size.width, height: size.height - footerHeight))
-            view.autoresizingMask = [.width, .height]
-            let hint = NSTextField(wrappingLabelWithString: "Drag a Mac to where it sits on your desk. Changes apply as soon as you drop it. To arrange the screens of a single Mac, use that Mac's Displays settings.")
-            hint.font = .systemFont(ofSize: 12)
-            hint.textColor = .secondaryLabelColor
-            hint.alignment = .center
-            hint.frame = NSRect(x: 24, y: 8, width: size.width - 48, height: footerHeight - 14)
-            hint.autoresizingMask = [.width, .maxYMargin]
-            content.addSubview(view)
-            content.addSubview(hint)
-            window.contentView = content
-            window.center()
-            self.window = window
-            self.view = view
-        }
-        refresh()
-        NSApp.activate(ignoringOtherApps: true)
-        window?.makeKeyAndOrderFront(nil)
+    var view: NSView {
+        if let content { return content }
+        let size = ArrangementPane.size, footerHeight = ArrangementPane.footerHeight
+        let content = NSView(frame: NSRect(origin: .zero, size: size))
+        content.widthAnchor.constraint(equalToConstant: size.width).isActive = true
+        content.heightAnchor.constraint(equalToConstant: size.height).isActive = true
+        let canvas = makeView(frame: NSRect(x: 0, y: footerHeight, width: size.width, height: size.height - footerHeight))
+        canvas.autoresizingMask = [.width, .height]
+        let hint = NSTextField(wrappingLabelWithString: "Drag a Mac to where it sits on your desk. Changes apply as soon as you drop it. To arrange the screens of a single Mac, use that Mac's Displays settings.")
+        hint.font = .systemFont(ofSize: 12)
+        hint.textColor = .secondaryLabelColor
+        hint.alignment = .center
+        hint.frame = NSRect(x: 24, y: 8, width: size.width - 48, height: footerHeight - 14)
+        hint.autoresizingMask = [.width, .maxYMargin]
+        content.addSubview(canvas)
+        content.addSubview(hint)
+        self.content = content
+        self.canvas = canvas
+        return content
     }
 
-    /// Picks up machines that joined, left, or changed displays while the window is open.
+    /// Picks up machines that joined, left, or changed displays while the pane shows.
     func refresh() {
-        guard let view, window?.isVisible != false, !view.isDragging else { return }
-        view.arrangement = anchor.arrangement()
-        view.online = anchor.onlineMachines
-        view.displayNames = anchor.knownDisplayNames
+        guard let canvas, !canvas.isDragging else { return }
+        canvas.arrangement = anchor.arrangement()
+        canvas.online = anchor.onlineMachines
+        canvas.displayNames = anchor.knownDisplayNames
     }
 }

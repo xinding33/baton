@@ -1,9 +1,9 @@
 import Foundation
 
-// What Baton adds to the display control carried over from Wink: the menu's view of a Mac's
-// displays, which also travels to the anchor's menu, and the rules for Baton's own restarts.
+// What Baton adds to the display control carried over from Wink: Settings' view of a Mac's
+// displays, which also travels to the anchor's Settings, and the rules for Baton's own restarts.
 
-/// One external display as a menu shows it.
+/// One external display as Settings shows it.
 public struct DisplayRow: Codable, Equatable, Sendable {
     public enum State: String, Codable, Sendable {
         case on
@@ -27,7 +27,7 @@ public struct DisplayRow: Codable, Equatable, Sendable {
     }
 }
 
-/// A Mac's external displays, for its own menu and, sent through the link, for the anchor's.
+/// A Mac's external displays, for its own Settings and, sent through the link, for the anchor's.
 public struct DisplayPanel: Codable, Equatable, Sendable {
     public var rows: [DisplayRow]
     /// Why nothing can be turned off on this Mac for now, e.g. because Wink is running there.
@@ -41,7 +41,7 @@ public struct DisplayPanel: Codable, Equatable, Sendable {
     }
 }
 
-/// What a menu can ask of a Mac's displays. Displays are named by UUID, which stays the same
+/// What Settings or the menu can ask of a Mac's displays. Displays are named by UUID, which stays the same
 /// when the display's ID changes.
 public enum DisplayAction: Codable, Equatable, Sendable {
     case turnOff(String)

@@ -65,9 +65,9 @@ final class ScrollReversalTests: XCTestCase {
         XCTAssertNil(ScrollSettings(enabled: false).axes(continuous: false))
     }
 
-    func testMenuSaysWhenTheTapIsMissing() {
+    func testSettingsSayWhenTheTapIsMissing() {
         XCTAssertNil(ScrollSettings().note(tapActive: true))
-        XCTAssertEqual(ScrollSettings().note(tapActive: false), "Needs Accessibility to reverse a mouse plugged into this Mac")
+        XCTAssertEqual(ScrollSettings().note(tapActive: false), "Needs Accessibility to reverse a mouse plugged into this Mac.")
         XCTAssertNil(ScrollSettings(enabled: false).note(tapActive: false))
     }
 

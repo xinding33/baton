@@ -30,22 +30,51 @@ the network refuses it.
 
 **Start Baton** writes the settings and begins sharing; nothing runs before that. The window
 stays open as **Settings…**, which is in the menu bar item afterwards, and which opening Baton
-again also brings up. It shows how sharing is going and what is in its way: a pairing code that
-does not match the other Mac's, Local Network access that is off, a Mac that has the anchor's
-name. Changing the name, the role, the code or the shared keyboard there restarts Baton on that
-Mac.
+again also brings up. The form is its **General** pane from then on. It shows how sharing is
+going and what is in its way: a pairing code that does not match the other Mac's, Local Network
+access that is off, a Mac that has the anchor's name. Changing the name, the role or the code
+there restarts Baton on that Mac.
 
 A Mac that connects to the anchor for the first time has no place next to the others yet, and
-the cursor cannot reach it. The anchor's menu says so; **Arrange Macs…** shows it at the right,
-ready to be dragged to where it sits.
+the cursor cannot reach it. The anchor's menu says so, and opens **Arrange** in its Settings,
+which shows the Mac at the right, ready to be dragged to where it sits.
 
-**Open at Login**, in the menu and ticked in the setup window, starts Baton when you log in and
-again if it ever crashes. It is a launch agent,
+**Open at Login**, ticked in the setup window and under General afterwards, starts Baton when you
+log in and again if it ever crashes. It is a launch agent,
 `~/Library/LaunchAgents/com.xinding.baton.plist`, which Baton writes and removes itself, and
 points at its new place if the app is moved. Switching it off takes effect at the next login.
 
 Settings are kept in `~/Library/Application Support/Baton`: `config.json`, and `secret.key` with
 `pairing.code`, the code it came from.
+
+## The menu and Settings
+
+The menu bar item (⇄) holds what is done in a hurry: on the anchor, which Macs
+are connected, **Bring Cursor Home**, **Pause Sharing**, where the shared keyboard is and a
+submenu to move it, **Wake All Macs**, **Settings…** and **Quit Baton**. A client has its
+connection, **Wake All Macs**, **Settings…** and **Quit Baton**. Three kinds of line come and
+go above and between those:
+
+- what needs attention on that Mac, at the top, each opening the pane that puts it right: a
+  missing permission, a Mac with no place yet, copies that are not getting through;
+- **Reconnect** and a display's name, while Baton has that display turned off;
+- what the updater is doing while it installs a release, or which Mac is on another version.
+
+Everything that is set once and left alone is in **Settings…**, a pane for each part of Baton:
+
+| Pane | What is there | Applies to |
+|---|---|---|
+| General | Name, role, pairing code, permissions, **Open at Login**, **Show in the menu bar** | this Mac |
+| Arrange | Where each Mac sits (anchor only) | all Macs |
+| Keyboard | The shared keyboard, whether it follows the cursor and how it moves (anchor only) | all Macs |
+| Mouse | Reversing the mouse wheel | this Mac |
+| Displays | Turning external displays off and on; the anchor also lists the other Macs' | each Mac's own |
+| Sleep & Wake | Waking together and staying awake | this Mac |
+| Clipboard | Sharing the clipboard | all Macs |
+| Updates | The version, **Check for Updates…**, installing automatically | all Macs |
+
+A switch takes effect when it is flipped. Only the name, the role, the pairing code and the choice
+of shared keyboard need **Apply and Restart**.
 
 ## Layout
 
@@ -70,8 +99,8 @@ Each machine is placed relative to another in the anchor's
 - `scale`: stretches a machine's edge so displays of different heights map onto each other fully
 - `timeoutMs`: how long a client may go silent before the cursor returns to the anchor
 
-The easier way to change the layout is **Arrange Macs…** in the anchor's menu bar item: drag a
-Mac to where it sits on your desk and drop it. It snaps against its neighbours and applies at
+The easier way to change the layout is **Arrange** in the anchor's Settings: drag a Mac to where
+it sits on your desk and drop it. It snaps against its neighbours and applies at
 once. Macs that are away stay in the picture, dimmed, and keep their place.
 
 If you edit the file by hand, restart the agent afterwards:
@@ -87,14 +116,16 @@ on one Mac apart.
 
 ## The shared keyboard
 
-Choose the keyboard under **Shared keyboard** in the anchor's Settings…, which lists the Bluetooth
-keyboards paired with that Mac. It is kept as `keyboardAddress`, the keyboard's Bluetooth
-address, in the anchor's config. Baton then tracks which Mac the keyboard is attached to. Keys typed while the cursor is on a different Mac are
-forwarded there, whichever Mac the keyboard is on.
+Choose the keyboard under **Keyboard** in the anchor's Settings, which lists the Bluetooth
+keyboards paired with that Mac; **Apply and Restart** there makes it the shared one. It is kept
+as `keyboardAddress`, the keyboard's Bluetooth address, in the anchor's config. Baton then tracks
+which Mac the keyboard is attached to, and the menu says which and can move it. Keys typed while
+the cursor is on a different Mac are forwarded there, whichever Mac the keyboard is on.
 
-With `keyboardFollows` on, the keyboard's Bluetooth connection itself moves to the Mac the cursor
-has settled on, once typing pauses, so that Touch ID works there. `handoffStrategy` picks how:
-`reconnect` (the old Mac disconnects, the new one connects) or `repair` (the old Mac forgets the
+With **Keyboard follows the cursor** on (`keyboardFollows`), the keyboard's Bluetooth connection
+itself moves to the Mac the cursor has settled on, once typing pauses, so that Touch ID works
+there. **To move it** (`handoffStrategy`) picks how: **Reconnect** (`reconnect`: the old Mac
+disconnects, the new one connects) or **Forget and pair again** (`repair`: the old Mac forgets the
 keyboard, the new one pairs with it).
 
 A Mac that goes to sleep while it has the keyboard forgets it first, and the anchor has the Mac
@@ -118,22 +149,23 @@ anchor that reverses every scroll made there, continuous or not, which is right 
 trackpad or Magic Mouse is attached to the anchor. It is not built.
 
 Each Mac reverses the scrolls that land on it, whether they come from the shared mouse or from a
-mouse plugged into that Mac, and has its own **Reverse Mouse Wheel** switch in the menu bar item,
-with **Vertical** and **Horizontal** under it. The choice is kept in `scroll.json` next to the
-config.
+mouse plugged into that Mac, and has its own **Reverse the mouse wheel** switch under **Mouse** in
+Settings, with **Vertical** and **Horizontal** under it. The choice is kept in `scroll.json` next
+to the config.
 
 Baton takes over from [Backspin](https://github.com/xinding33/backspin). Do not run the two on the
 same Mac: two reversals cancel out.
 
 ## Displays
 
-Each Mac's menu lists its external displays. Click one to turn it off while its cable stays
-plugged in, and click it again to reconnect it. The anchor's menu also lists the other Macs'
-displays and switches them over the link. This is [Wink](https://github.com/xinding33/wink)
-built in, with Wink's rules:
+**Displays** in each Mac's Settings lists its external displays. Untick one to turn it off while
+its cable stays plugged in, and tick it again to reconnect it. The anchor's pane also lists the
+other Macs' displays and switches them over the link. While a display is off, the menu offers to
+reconnect it, on its own Mac and on the anchor. This is
+[Wink](https://github.com/xinding33/wink) built in, with Wink's rules:
 
 - A display you turn off is remembered, and turned off again whenever it appears: after login,
-  after sleep, after a cable change. Reconnecting it from the menu forgets it.
+  after sleep, after a cable change. Reconnecting it forgets it.
 - The built-in screen and the last active screen stay on. Mirrored displays have to be
   un-mirrored first.
 - A display is recorded in `~/Library/Application Support/Baton/displays/recovery.json` before
@@ -145,8 +177,8 @@ Where Baton differs from Wink is its own restart. Displays that are off stay off
 redeployed or restarted after a crash, so a deploy does not rearrange your windows. **Quit
 Baton** reconnects them; they are turned off again when Baton next starts.
 
-While Wink itself is running on a Mac, Baton leaves that Mac's displays alone, and its menu
-says so. The first time Baton takes charge of a Mac's displays, it copies the ones Wink
+While Wink itself is running on a Mac, Baton leaves that Mac's displays alone, and its Displays
+pane says so. The first time Baton takes charge of a Mac's displays, it copies the ones Wink
 remembered there.
 
 A display that is off is not part of the cursor layout. If the cursor is on a display when it
@@ -159,22 +191,22 @@ Baton's own link: a client tells the anchor, which wakes its own display and tel
 clients. A Mac woken this way does not pass the wake on again. **Wake All Macs** in the menu bar
 item, or ⌃⌥⌘W on any Mac, does the same on request.
 
-Only a Mac whose system is awake can be woken, since a sleeping Mac has no link. **Keep This Mac
-Awake** holds off idle system sleep for that reason; the display still sleeps on schedule. With
-**Only on Power Adapter** on, a MacBook on battery sleeps as usual and is out of reach until it
+Only a Mac whose system is awake can be woken, since a sleeping Mac has no link. **Keep this Mac
+awake** holds off idle system sleep for that reason; the display still sleeps on schedule. With
+**Only on power adapter** on, a MacBook on battery sleeps as usual and is out of reach until it
 wakes by itself.
 
 While one Mac is in use, the displays of the others stay on. A Mac whose own mouse, trackpad or
 keyboard is being used says so every ten seconds, and each of the others counts that as activity
 of its own, so its display sleep time runs from your last input at any of them. On the anchor
-that covers the shared mouse and keyboard wherever the cursor is. **Stay Awake While Another Mac
-Is in Use** switches this off for one Mac, and **Only on Power Adapter** applies to it too. It
+that covers the shared mouse and keyboard wherever the cursor is. **Stay awake while another Mac
+is in use** switches this off for one Mac, and **Only on power adapter** applies to it too. It
 keeps a display on and never turns one on: a display that is asleep stays asleep, and so does a
 Mac at its lock screen.
 
-Each Mac has its own switches in the menu bar item: **Wake Others When This Mac Wakes**, **Keep
-This Mac Awake**, **Stay Awake While Another Mac Is in Use** and **Only on Power Adapter**. They
-are kept in `wake.json` next to the config, along with the hotkey (`"hotKey": null` for none;
+Each Mac has its own switches under **Sleep & Wake** in Settings: **Wake the other Macs when this
+Mac wakes**, **Keep this Mac awake**, **Stay awake while another Mac is in use** and **Only on
+power adapter**. They are kept in `wake.json` next to the config, along with the hotkey (`"hotKey": null` for none;
 restart the agent after editing the file).
 
 Baton takes over from [Ripple](https://github.com/xinding33/ripple), and a Mac's first run copies
@@ -185,7 +217,8 @@ wake would be sent twice.
 
 What is copied on one Mac can be pasted on the others: text, rich text, links and images. A copy
 is sent to the other Macs the moment it is made, so it is already there when the cursor arrives.
-**Share clipboard** in the menu bar item, on any Mac, switches it for all of them.
+**Share the clipboard between your Macs**, under **Clipboard** in Settings on any Mac, switches
+it for all of them.
 
 Not shared:
 
@@ -204,10 +237,11 @@ the two cannot loop; but macOS may still put its own, slower copy in place of th
 delivered.
 
 Baton therefore watches the Handoff setting on every Mac. While Universal Clipboard is on on two
-or more of them, the menu on the anchor lists the clients to turn it off on, and each of those
-clients says so in its own menu. Choosing an entry opens the setting on that Mac: System
-Settings → General → AirDrop & Continuity → "Allow Handoff between this Mac and your iCloud
-devices". The entries go away within a few seconds of switching it off. The anchor may keep
+or more of them, the Clipboard pane on the anchor has a button for each client to turn it off
+on, each of those clients has one in its own pane, and the menus point there. Pressing one opens
+the setting on that Mac: System Settings → General → AirDrop & Continuity → "Allow Handoff
+between this Mac and your iCloud devices". The buttons go away within a few seconds of switching
+it off. The anchor may keep
 Handoff, so an iPhone's clipboard still reaches the anchor; Baton does not pass it on to the
 clients. `Baton ctl clipboard` shows what each Mac found, including when a Handoff clipboard
 last arrived there.
@@ -218,7 +252,7 @@ megabytes never delays the heartbeat on the input link.
 macOS 27.0 lets Baton read the pasteboard without asking. If a later version asks, it asks once,
 on the Mac where something was just copied; set Baton to always allow under Privacy & Security →
 Paste from Other Apps on each Mac. Until then that Mac still receives the others' copies, and
-its menu says that copies made there are not shared.
+its menu and its Clipboard pane say that copies made there are not shared.
 
 ## Updates
 
@@ -244,15 +278,15 @@ leads, and all of them move together:
 - A Mac that is ahead of the anchor, say because it was updated by hand while the anchor was
   out of reach, pulls the anchor and the others up to its release. Versions only ever go up.
 
-**Check for Updates…** in the menu bar item looks now, on any Mac, and offers to install what it
-finds on all of them; then a pause in typing is enough for the restart. **Install Updates
-Automatically** is on by default. It is the anchor's switch and counts for every Mac; a client
+**Check for Updates…**, under **Updates** in Settings, looks now, on any Mac, and offers to
+install what it finds on all of them; then a pause in typing is enough for the restart. **Install
+updates automatically** is on by default. It is the anchor's switch and counts for every Mac; a client
 changes it on the anchor. With it off, a new release waits for **Check for Updates…**, but Macs
 on different versions are still brought to the newest one among them.
 
 The Macs settle this on a connection of its own, two ports above `port`. It stays readable
 across versions, so a Mac on an old release is not shut out the way it is from the input link.
-While versions differ, each menu says which Mac has which.
+While versions differ, each menu and each Updates pane says which Mac has which.
 
 A development build never updates itself: `scripts/deploy.sh` installs those, and its Macs run
 exactly what was deployed until the next deploy. `Baton update-check` says which kind a copy is.
@@ -297,11 +331,11 @@ To produce the same notarized ZIP locally, save notary credentials once with
 - **⌃⌥⌘⎋** brings the cursor back to the anchor.
 - **⌃⌥⌘W** wakes every Mac's display.
 - The menu bar item (⇄) shows where the cursor is and can pause sharing. What needs attention on
-  that Mac, such as a missing permission, is at the top of its menu.
-- **Settings…** opens the window described under Setting up, and **Open at Login** switches the
-  launch agent.
-- **Hide Menu Bar Icon…** removes the item on that Mac while Baton keeps running. Open Baton
-  again, or run `Baton ctl icon show`, to bring it back.
+  that Mac, such as a missing permission, is at the top of its menu. See The menu and Settings.
+- **Settings…** opens the window with a pane for each part of Baton.
+- Unticking **Show in the menu bar**, under General, removes the item on that Mac while Baton
+  keeps running. Open Baton again, or run `Baton ctl icon show`, to bring it back.
+- `Baton ctl menu` prints the menu as it stands.
 - `Baton ctl status` prints the agent's state; `Baton ctl home|pause|resume` control it.
 - `Baton ctl keyboard` shows where the keyboard is; `keyboard move <machine>` hands it over and
   `keyboard follow on|off` switches following.
@@ -312,8 +346,8 @@ To produce the same notarized ZIP locally, save notary credentials once with
   when it last told the others it is in use or heard that one of them is; `wake all` wakes every
   Mac, and `wake others on|off`, `wake keep on|off`, `wake in-use on|off` and
   `wake adapter-only on|off` change the settings.
-- `Baton ctl arrange show` opens the arrangement window.
-- `Baton ctl displays` prints each Mac's displays as the menu shows them; `displays off <name>`,
+- `Baton ctl arrange show` opens Settings on the Arrange pane.
+- `Baton ctl displays` prints each Mac's displays as Settings shows them; `displays off <name>`,
   `displays on <name>` and `displays on all` switch this Mac's, and with a machine's name first
   (`displays mini off <name>`) the anchor switches another Mac's.
 - `Baton display-check` prints what display control sees on a Mac. It works without the agent
@@ -324,9 +358,13 @@ To produce the same notarized ZIP locally, save notary credentials once with
   Mac to that release, and `update auto on|off` switches automatic updates.
 - `Baton update-check` prints what kind of copy this is, how it is signed, whether it updates
   itself and the latest release. It works without the agent and changes nothing.
-- `Baton ctl settings` prints what the settings window shows, without the code; `settings show`
-  opens it and `settings snapshot <png path>` draws it to a file. `settings name|role|code|
-  generate|keyboard|login ...` fill it in and `settings apply` presses its button.
+- `Baton ctl settings` prints what the General pane shows, without the code. `settings show
+  [pane]` opens the window, `settings snapshot <png path> [pane]` draws a pane to a file and
+  `settings pane <pane>` prints one. The panes are `general`, `arrange`, `keyboard`, `mouse`,
+  `displays`, `wake`, `clipboard` and `updates`. `settings name|role|code|generate|login|icon ...`
+  fill in General and `settings apply` presses its button; `settings press <pane> <title>` flips a
+  switch or presses a button in any pane, and `settings choose <pane> <title> = <option>` picks
+  from a list, which is how the shared keyboard is chosen without the mouse.
 - `Baton login` says whether Open at Login is on, and `login on|off` switches it. It works
   without the agent.
 - `Baton ctl sim move <dx> <dy>` (also `enter`, `click`, `key`, `scroll`) feeds synthetic input

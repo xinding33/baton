@@ -4,12 +4,13 @@ import CoreBluetooth
 import Network
 import SystemConfiguration
 
-/// Sets Baton up on a Mac that has no `config.json`, and is its Settings window afterwards.
+/// Sets Baton up on a Mac that has no `config.json`, and is the General pane of its Settings
+/// window afterwards.
 ///
 /// The first run comes before anything else starts: no event tap, no listener, no connection.
 /// Only when the window's Start button has written `config.json` and `secret.key` does the app
-/// go on to share input, and the same window then stays as Settings.
-final class SetupWindowController: NSObject, NSWindowDelegate {
+/// go on to share input, and the same window then stays as Settings, with the other panes.
+final class SetupWindowController: NSObject, SettingsPane {
     /// The parts of the Mac the window reads and changes. A test replaces them, so that it never
     /// touches the real files, launch agent, permissions or network.
     struct Environment {
@@ -35,13 +36,11 @@ final class SetupWindowController: NSObject, NSWindowDelegate {
             return { mover.requestPermission() }
         }()
         var open: (URL) -> Void = { NSWorkspace.shared.open($0) }
-        /// Puts the window in front of its user.
-        var present: (NSWindow) -> Void = { window in
-            // Baton has no menu bar of its own, and without an Edit menu ⌘V does nothing in a
-            // text field, which is how most pairing codes arrive.
-            if NSApp.mainMenu == nil { NSApp.mainMenu = SetupWindowController.makeMainMenu() }
-            NSApp.activate(ignoringOtherApps: true)
-            window.makeKeyAndOrderFront(nil)
+        var showsMenuIcon: () -> Bool = { !MenuIcon.isHidden }
+        /// Hiding the icon asks first, because it takes the way to this window with it.
+        var showMenuIcon: (Bool) -> Void = { show in
+            guard show || MenuIcon.confirmHiding() else { return }
+            MenuIcon.setHidden(!show)
         }
         /// The pasteboard can make its caller wait, so it is not written on the main thread.
         var copy: (String) -> Void = { text in
@@ -61,25 +60,12 @@ final class SetupWindowController: NSObject, NSWindowDelegate {
         var name = ""
         var role = Role.anchor
         var code = ""
-        var keyboardAddress: String?
         var openAtLogin = true
     }
 
-    static func makeMainMenu() -> NSMenu {
-        let edit = NSMenu(title: "Edit")
-        edit.addItem(withTitle: "Undo", action: Selector(("undo:")), keyEquivalent: "z")
-        edit.addItem(withTitle: "Redo", action: Selector(("redo:")), keyEquivalent: "Z")
-        edit.addItem(.separator())
-        edit.addItem(withTitle: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
-        edit.addItem(withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
-        edit.addItem(withTitle: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
-        edit.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
-        edit.addItem(.separator())
-        edit.addItem(withTitle: "Close Window", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
-        let main = NSMenu()
-        main.addItem(withTitle: "Edit", action: nil, keyEquivalent: "").submenu = edit
-        return main
-    }
+    let id = StatusMenu.Pane.general
+    let title = "General"
+    let symbol = "gearshape"
 
     private var environment: Environment
     private var mode = SetupState.Mode.settings
@@ -96,17 +82,18 @@ final class SetupWindowController: NSObject, NSWindowDelegate {
 
     private weak var anchor: Anchor?
     private weak var client: ClientAgent?
-    /// Opens the arrangement window, for a Mac that has no place yet.
-    var onShowArrangement: (() -> Void)?
+    /// The window this pane is in. Without one, as in a test, nothing is ever put on screen.
+    weak var host: SettingsWindowController?
+    /// What the other panes want pointed out, to go with what is wrong here.
+    var otherAttention: () -> [StatusMenu.Attention] = { [] }
+    /// The menu bar icon was shown or hidden.
+    var onMenuIconChanged: (() -> Void)?
 
-    private var window: NSWindow?
-    private var view: SetupView?
-    private var timer: DispatchSourceTimer?
+    private var form: SetupView?
+    /// Whether the window is open, on whichever pane.
+    private var showing = false
     private var browser: NWBrowser?
     private var searched = LocalNetworkAccess.unknown
-    /// The Bluetooth keyboards paired with this Mac, once they have been read.
-    var keyboards: [BluetoothKeyboard]?
-    private var readingKeyboards = false
     /// A client alternates between two addresses while it cannot connect, each with its own
     /// failure. Both are kept for a while so that the diagnosis does not flicker between them.
     private var recentFailures: [(at: UInt64, reason: String)] = []
@@ -154,7 +141,6 @@ final class SetupWindowController: NSObject, NSWindowDelegate {
         draft.name = contents.config?.name ?? MachineName.suggestion(fromComputerName: environment.computerName())
         draft.role = contents.config?.role ?? .anchor
         draft.code = environment.installation.pairingCode ?? ""
-        draft.keyboardAddress = contents.config?.keyboardAddress.map { BluetoothAddress.normalize($0) ?? $0 }
         draft.openAtLogin = environment.login.isOn || (mode == .firstRun && environment.login.problem == nil)
         self.draft = draft
         saved = draft
@@ -164,34 +150,28 @@ final class SetupWindowController: NSObject, NSWindowDelegate {
         failure = nil
     }
 
-    // MARK: The window
+    // MARK: The pane
 
-    func show() {
-        if window == nil {
-            let view = SetupView()
-            view.onEdit = { [weak self] in self?.edit($0) }
-            let window = NSWindow(contentRect: NSRect(origin: .zero, size: view.fittingSize), styleMask: [.titled, .closable, .miniaturizable], backing: .buffered, defer: false)
-            window.isReleasedWhenClosed = false
-            window.delegate = self
-            window.contentView = view
-            self.window = window
-            self.view = view
-            refresh()
-            window.center()
-        }
-        if window?.isVisible == false, mode == .settings {
-            // Changes that were not applied do not survive closing the window.
-            loadDraft(from: environment.installation.load())
-            keyboards = nil
-        }
-        window.map(environment.present)
-        if timer == nil { timer = repeatingTimer(every: 1) { [weak self] in self?.refresh() } }
-        refresh()
+    var view: NSView {
+        if let form { return form }
+        let form = SetupView()
+        form.onEdit = { [weak self] in self?.edit($0) }
+        self.form = form
+        return form
     }
 
-    func windowWillClose(_ notification: Notification) {
-        timer?.cancel()
-        timer = nil
+    func show() {
+        host?.show(id)
+    }
+
+    func windowWillOpen() {
+        showing = true
+        // Changes that were not applied do not survive closing the window.
+        if mode == .settings { loadDraft(from: environment.installation.load()) }
+    }
+
+    func windowDidClose() {
+        showing = false
         stopSearching()
         guard mode == .firstRun else { return }
         // Without settings there is nothing to run, and no menu bar item to come back through.
@@ -199,21 +179,14 @@ final class SetupWindowController: NSObject, NSWindowDelegate {
         environment.quit()
     }
 
-    /// Brings the window up to date with this Mac. Called every second while it is open.
+    /// Brings the pane up to date with this Mac. Called every second while it shows.
     func refresh() {
         search()
-        readKeyboards()
         noteFailures()
-        guard let window, let view else { return }
-        view.apply(makeState())
-        window.title = mode == .firstRun ? "Set Up Baton" : "Baton Settings"
-        // The window grows and shrinks downwards as notes come and go.
-        let size = view.fittingSize
-        if abs(size.height - window.contentLayoutRect.height) > 0.5 {
-            var frame = window.frameRect(forContentRect: NSRect(origin: .zero, size: size))
-            frame.origin = NSPoint(x: window.frame.minX, y: window.frame.maxY - frame.height)
-            window.setFrame(frame, display: true)
-        }
+        guard let form else { return }
+        form.apply(makeState())
+        // The pane grows and shrinks as notes come and go, and the window with it.
+        host?.fit()
     }
 
     // MARK: Looking for the anchor during the first run
@@ -222,7 +195,7 @@ final class SetupWindowController: NSObject, NSWindowDelegate {
     /// press Start: that Local Network access is on, that the anchor is up, and what it is called.
     private func search() {
         guard mode == .firstRun, draft.role == .client else { return stopSearching() }
-        guard environment.searchesNetwork, window?.isVisible == true, browser == nil else { return }
+        guard environment.searchesNetwork, showing, browser == nil else { return }
         searched = .searching
         let browser = NWBrowser(for: .bonjour(type: batonServiceType, domain: nil), using: NWParameters())
         browser.browseResultsChangedHandler = { [weak self] results, _ in
@@ -255,21 +228,6 @@ final class SetupWindowController: NSObject, NSWindowDelegate {
         log("setup: looking for the anchor: \(reason)")
         if LinkFacts(name: "", connected: false, discovery: reason).diagnosis == .localNetworkBlocked { searched = .blocked }
         refresh()
-    }
-
-    // MARK: The shared keyboard
-
-    private var choosesKeyboard: Bool { mode == .settings && anchor != nil && draft.role == .anchor }
-
-    private func readKeyboards() {
-        guard choosesKeyboard, keyboards == nil, !readingKeyboards, window?.isVisible == true, environment.bluetooth() == .allowed, let anchor else { return }
-        readingKeyboards = true
-        anchor.pairedKeyboards { [weak self] keyboards in
-            guard let self else { return }
-            self.readingKeyboards = false
-            self.keyboards = keyboards
-            if keyboards != nil { self.refresh() }
-        }
     }
 
     // MARK: What the window shows
@@ -331,31 +289,36 @@ final class SetupWindowController: NSObject, NSWindowDelegate {
     }
 
     private var changed: Bool {
-        draft.name != saved.name || draft.role != saved.role || draft.keyboardAddress != saved.keyboardAddress || entersCode
+        draft.name != saved.name || draft.role != saved.role || entersCode
     }
 
     /// What needs somebody's attention while Baton runs, most pressing first: in full for the
     /// window, and in a line for the menu.
-    private func attention(accessibility: Bool) -> [(text: String, summary: String, arrange: Bool)] {
-        var items: [(String, String, Bool)] = []
+    func attention() -> [StatusMenu.Attention] {
+        let accessibility = environment.accessibility()
+        var items: [StatusMenu.Attention] = []
         if let anchor {
             if !accessibility {
-                items.append(("Accessibility is not allowed yet, so the mouse cannot leave this Mac.", "Accessibility is not allowed yet", false))
+                items.append(.init(summary: "Accessibility is not allowed yet", detail: "Accessibility is not allowed yet, so the mouse cannot leave this Mac.", pane: id))
             }
-            let config = anchor.currentConfig
-            for name in AnchorAttention.unplaced(online: anchor.onlineMachines, placed: Set(anchor.layout.machines.keys), anchor: config.name) {
-                items.append(("“\(name)” is connected but has no place next to the other Macs yet, so the cursor cannot reach it. Choose Arrange Macs… in Baton’s menu and drag it to where it sits.",
-                              "\(name) has no place yet: Arrange Macs…", true))
+            let unplaced = AnchorAttention.unplaced(online: anchor.onlineMachines, placed: Set(anchor.layout.machines.keys), anchor: anchor.currentConfig.name)
+            if let summary = AnchorAttention.unplacedSummary(unplaced) {
+                let names = unplaced.map { "“\($0)”" }.joined(separator: " and ")
+                items.append(.init(
+                    summary: summary,
+                    detail: "\(names) \(unplaced.count == 1 ? "is" : "are") connected but \(unplaced.count == 1 ? "has" : "have") no place next to the other Macs yet, so the cursor cannot get there. Under Arrange, drag \(unplaced.count == 1 ? "it" : "each") to where it sits.",
+                    pane: StatusMenu.Pane.arrange
+                ))
             }
         } else if client != nil {
             if !accessibility {
-                items.append(("Accessibility is not allowed yet, so this Mac cannot be controlled.", "Accessibility is not allowed yet", false))
+                items.append(.init(summary: "Accessibility is not allowed yet", detail: "Accessibility is not allowed yet, so this Mac cannot be controlled.", pane: id))
             }
             if let diagnosis = linkFacts?.diagnosis, diagnosis.needsAttention {
-                items.append((diagnosis.advice, diagnosis.summary, false))
+                items.append(.init(summary: diagnosis.summary, detail: diagnosis.advice, pane: id))
             }
         }
-        return items
+        return items + otherAttention()
     }
 
     func makeState() -> SetupState {
@@ -367,8 +330,12 @@ final class SetupWindowController: NSObject, NSWindowDelegate {
         state.code = draft.code
         state.codeProblem = codeProblem
         state.codeNote = codeNote
-        state.openAtLogin = draft.openAtLogin
-        state.loginNote = environment.login.problem
+        let login = environment.login
+        state.openAtLogin = mode == .firstRun ? draft.openAtLogin : login.isOn
+        // Turning it on takes a copy that will still be there at login.
+        state.loginEnabled = mode == .firstRun ? login.problem == nil : login.canToggle
+        state.loginNote = login.problem
+        state.showsMenuIcon = environment.showsMenuIcon()
 
         let accessibility = environment.accessibility()
         let bluetooth = environment.bluetooth()
@@ -386,8 +353,8 @@ final class SetupWindowController: NSObject, NSWindowDelegate {
             state.cancelTitle = "Quit"
             state.actionNote = failure
         case .settings:
-            let attention = attention(accessibility: accessibility)
-            var lines = attention.map(\.text)
+            let attention = attention()
+            var lines = attention.map(\.detail)
             if lines.isEmpty {
                 if let anchor {
                     let peers = anchor.peerNames
@@ -403,20 +370,7 @@ final class SetupWindowController: NSObject, NSWindowDelegate {
             state.status = lines.isEmpty ? nil : lines.joined(separator: "\n")
             state.statusNeedsAttention = !attention.isEmpty || !configProblems.isEmpty
             if draft.name != saved.name, client != nil {
-                state.nameNote = "The Mac with the mouse knows this one by its name. After the change, give it its place again there, with Arrange Macs…"
-            }
-            if choosesKeyboard {
-                state.keyboards = KeyboardChoices.entries(paired: keyboards ?? [], configured: draft.keyboardAddress ?? saved.keyboardAddress)
-                state.keyboardAddress = draft.keyboardAddress
-                if bluetooth != .allowed {
-                    state.keyboardNote = "Allow Bluetooth below to see the keyboards paired with this Mac."
-                } else if keyboards == nil {
-                    state.keyboardNote = "Reading the keyboards paired with this Mac…"
-                } else if keyboards?.isEmpty == true {
-                    state.keyboardNote = "No Bluetooth keyboard is paired with this Mac. Pair it in System Settings › Bluetooth, then open this window again."
-                } else {
-                    state.keyboardNote = "Baton follows this keyboard from Mac to Mac, so that its keys reach the Mac the cursor is on. With Keyboard follows the cursor, in the menu, it also moves the keyboard’s own connection there."
-                }
+                state.nameNote = "The Mac with the mouse knows this one by its name. After the change, give it its place again there, under Arrange in its Settings."
             }
             state.actionTitle = "Apply and Restart"
             state.actionEnabled = changed
@@ -438,11 +392,19 @@ final class SetupWindowController: NSObject, NSWindowDelegate {
         case let .code(code): draft.code = code
         case .generateCode: draft.code = PairingCode.generate()
         case .copyCode: environment.copy(PairingCode.format(draft.code))
-        case let .keyboard(address): draft.keyboardAddress = address
-        case let .openAtLogin(on): draft.openAtLogin = on
+        case let .openAtLogin(on):
+            // Part of what Start writes on the first run; switched there and then afterwards.
+            if mode == .firstRun {
+                draft.openAtLogin = on
+            } else if let problem = setLogin(on) {
+                failure = "Open at Login could not be switched: \(problem)"
+            }
+        case let .showMenuIcon(show):
+            environment.showMenuIcon(show)
+            onMenuIconChanged?()
         case let .permission(kind): fix(kind)
         case .apply: return apply()
-        case .cancel: window?.close()
+        case .cancel: host?.close()
         }
         refresh()
     }
@@ -508,19 +470,17 @@ final class SetupWindowController: NSObject, NSWindowDelegate {
             throw LoginItemError(reason: "the keyboard is moving between Macs just now. Try again in a moment.")
         }
         let draft = self.draft, saved = self.saved
-        let keepsKeyboard = choosesKeyboard
-        if draft.name != saved.name || draft.role != saved.role || draft.keyboardAddress != saved.keyboardAddress {
+        if draft.name != saved.name || draft.role != saved.role {
             let edit: (inout Config) -> Void = { config in
                 config.rename(to: draft.name)
                 config.role = draft.role
-                if keepsKeyboard { config.keyboardAddress = draft.keyboardAddress }
             }
             // The anchor rewrites the whole file from its own copy, so its copy is what changes.
             if let anchor {
                 anchor.updateConfig(edit)
                 // It only logs a failure to write, and a restart would then bring the old settings back.
                 let written = environment.installation.load().config
-                guard written?.name == draft.name, written?.role == draft.role, !keepsKeyboard || written?.keyboardAddress == draft.keyboardAddress else {
+                guard written?.name == draft.name, written?.role == draft.role else {
                     throw LoginItemError(reason: "config.json could not be written. The log says why.")
                 }
                 environment.installation.renameKnownDisplays(from: saved.name, to: draft.name)
@@ -535,33 +495,6 @@ final class SetupWindowController: NSObject, NSWindowDelegate {
         environment.relaunch()
     }
 
-    // MARK: The menu
-
-    /// What needs attention goes to the top of the menu, where it is seen. Settings and Open at
-    /// Login go where this is called from.
-    func addItems(to menu: NSMenu) {
-        let attention = attention(accessibility: environment.accessibility())
-        for (index, item) in attention.enumerated() {
-            let entry = NSMenuItem(title: "⚠︎ \(item.summary)", action: item.arrange ? #selector(showArrangement) : #selector(showFromMenu), keyEquivalent: "")
-            entry.target = self
-            entry.toolTip = item.text
-            menu.insertItem(entry, at: index)
-        }
-        if !attention.isEmpty { menu.insertItem(.separator(), at: attention.count) }
-
-        menu.addItem(withTitle: "Settings…", action: #selector(showFromMenu), keyEquivalent: "").target = self
-        let login = environment.login
-        // Turning it on takes a copy that will still be there at login.
-        let item = menu.addItem(withTitle: "Open at Login", action: login.canToggle ? #selector(toggleLogin) : nil, keyEquivalent: "")
-        item.target = self
-        item.state = login.isOn ? .on : .off
-        item.toolTip = login.problem
-    }
-
-    @objc private func showFromMenu() { show() }
-    @objc private func showArrangement() { onShowArrangement?() }
-    @objc private func toggleLogin() { _ = setLogin(!environment.login.isOn) }
-
     private func setLogin(_ on: Bool) -> String? {
         do {
             try environment.login.set(on)
@@ -574,16 +507,14 @@ final class SetupWindowController: NSObject, NSWindowDelegate {
 
     // MARK: Control commands
 
-    /// `ctl settings ...` drives the window without the mouse, as `ctl arrange` does its own.
+    /// `ctl settings ...` drives this pane without the mouse. `SettingsWindowController` takes
+    /// the words that are about the window and the other panes.
     func command(_ words: [String]) -> String {
-        let usage = "usage: settings [show | snapshot <png path> | name <name> | role anchor|client | code <code> | generate | keyboard <address>|none | login on|off | apply]"
+        let usage = "usage: settings [show [pane] | snapshot <png path> [pane] | pane <pane> | press <pane> <title> | choose <pane> <title> = <option>"
+            + " | name <name> | role anchor|client | code <code> | generate | login on|off | icon on|off | apply]"
         switch (words.first, words.count) {
         case (nil, _):
             break
-        case ("show", 1):
-            show()
-        case ("snapshot", 2):
-            return SetupView.writeSnapshot(of: makeState(), to: URL(fileURLWithPath: words[1])) ? "wrote \(words[1])" : "could not write \(words[1])"
         case ("name", 2):
             edit(.name(words[1]))
         case ("role", 2):
@@ -593,17 +524,13 @@ final class SetupWindowController: NSObject, NSWindowDelegate {
             edit(.code(words.dropFirst().joined(separator: "-")))
         case ("generate", 1):
             edit(.generateCode)
-        case ("keyboard", 2):
-            guard choosesKeyboard else { return "the shared keyboard is chosen on the anchor, once Baton is running" }
-            guard words[1] == "none" || BluetoothAddress.normalize(words[1]) != nil else { return usage }
-            edit(.keyboard(BluetoothAddress.normalize(words[1])))
         case ("login", 2):
             guard ["on", "off"].contains(words[1]) else { return usage }
-            if mode == .firstRun {
-                edit(.openAtLogin(words[1] == "on"))
-            } else if let problem = setLogin(words[1] == "on") {
-                return problem
-            }
+            edit(.openAtLogin(words[1] == "on"))
+            if let failure { return failure }
+        case ("icon", 2):
+            guard ["on", "off"].contains(words[1]) else { return usage }
+            edit(.showMenuIcon(words[1] == "on"))
         case ("apply", 1):
             apply()
         default:
@@ -617,7 +544,8 @@ final class SetupWindowController: NSObject, NSWindowDelegate {
         let login = environment.login
         var report: [String: Any] = [
             "mode": mode == .firstRun ? "first run" : "settings",
-            "window": window?.isVisible == true ? "open" : "closed",
+            "window": showing ? "open" : "closed",
+            "panes": host?.panes.map(\.id) ?? [id],
             "name": state.name,
             "role": state.role.rawValue,
             "paired": hasSecret,
@@ -634,7 +562,6 @@ final class SetupWindowController: NSObject, NSWindowDelegate {
         if let problem = login.problem { report["openAtLoginProblem"] = problem }
         if let status = state.status { report["status"] = status }
         if let note = state.actionNote { report["note"] = note }
-        if let keyboards = state.keyboards { report["keyboards"] = keyboards.map { $0.address ?? "none" } }
         if let facts = linkFacts { report["link"] = facts.diagnosis.summary }
         return jsonString(report)
     }

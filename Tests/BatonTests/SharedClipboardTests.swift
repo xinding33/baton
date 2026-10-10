@@ -4,8 +4,8 @@ import Network
 import XCTest
 @testable import Baton
 
-/// The app's own wiring of the shared clipboard: the real TLS parameters and port, the menu
-/// items and the control command. The pasteboards are named ones made for the test.
+/// The app's own wiring of the shared clipboard: the real TLS parameters and port, its pane of
+/// Settings and the control command. The pasteboards are named ones made for the test.
 final class SharedClipboardTests: XCTestCase {
     static let home = FileManager.default.temporaryDirectory.appendingPathComponent("baton-tests-\(UUID().uuidString)")
 
@@ -25,6 +25,12 @@ final class SharedClipboardTests: XCTestCase {
             guard Date() < deadline else { return XCTFail("timed out waiting for \(what)") }
             RunLoop.current.run(until: Date().addingTimeInterval(0.01))
         }
+    }
+
+    /// What can be pressed in the Clipboard pane: the switch, then a button for each Mac that
+    /// should turn Handoff off.
+    func controls(_ clipboard: SharedClipboard) -> [SettingsRow] {
+        clipboard.settingsPane.rows.filter { $0.act != nil }
     }
 
     func status(_ clipboard: SharedClipboard) -> [String: Any] {
@@ -55,7 +61,7 @@ final class SharedClipboardTests: XCTestCase {
 
         let client = SharedClipboard(config: clientConfig, secret: secret, pasteboard: there, universalClipboard: { false })
         client.start()
-        XCTAssertNil(client.menuItems()[0].action, "a client that has not found the anchor cannot switch sharing")
+        XCTAssertFalse(controls(client)[0].enabled, "a client that has not found the anchor cannot switch sharing")
         client.anchorChanged("127.0.0.1")
         wait("the client") { self.status(client)["connected"] as? Bool == true && self.status(client)["enabled"] as? Bool == true }
         XCTAssertEqual(status(anchor)["peers"] as? [String], ["mini"])
@@ -69,15 +75,15 @@ final class SharedClipboardTests: XCTestCase {
         there.setString("and back", forType: .string)
         wait("the text on the anchor") { here.string(forType: .string) == "and back" }
 
-        // The menu item, on both Macs, and the switch from the client's.
-        XCTAssertEqual(anchor.menuItems().map(\.title), ["Share clipboard"])
-        XCTAssertEqual(client.menuItems()[0].state, .on)
-        let item = client.menuItems()[0]
-        _ = item.target?.perform(item.action)
-        wait("sharing to switch off") { anchor.menuItems()[0].state == .off && client.menuItems()[0].state == .off }
+        // The switch, on both Macs, and switching it from the client's pane.
+        XCTAssertEqual(controls(anchor).map(\.title), ["Share the clipboard between your Macs"])
+        XCTAssertEqual(controls(client)[0].isOn, true)
+        XCTAssertNil(anchor.attention)
+        XCTAssertNotNil(client.settingsPane.rows.press("Share the clipboard between your Macs"))
+        wait("sharing to switch off") { self.controls(anchor)[0].isOn == false && self.controls(client)[0].isOn == false }
         wait("the setting to be saved") { saved == [false] }
         XCTAssertEqual(anchor.command(["on"]), "sharing the clipboard: on")
-        wait("sharing to switch on") { client.menuItems()[0].state == .on && saved == [false, true] }
+        wait("sharing to switch on") { self.controls(client)[0].isOn == true && saved == [false, true] }
 
         // The input link went away: the clipboard's connection goes with it.
         client.anchorChanged(nil)
@@ -85,7 +91,7 @@ final class SharedClipboardTests: XCTestCase {
         XCTAssertEqual(status(client)["connected"] as? Bool, false)
     }
 
-    func testTheMenuAsksForHandoffToBeTurnedOffAndOpensTheSetting() {
+    func testSettingsAskForHandoffToBeTurnedOffAndOpenTheSetting() {
         var anchorConfig = Config(name: "studio", role: .anchor)
         anchorConfig.port = UInt16.random(in: 40000..<60000)
         var clientConfig = Config(name: "mini", role: .client)
@@ -109,26 +115,29 @@ final class SharedClipboardTests: XCTestCase {
         client.start()
         client.anchorChanged("127.0.0.1")
 
-        let heading = "Universal Clipboard is also on and gets in the way:"
-        wait("the request in both menus") { anchor.menuItems().count == 3 && client.menuItems().count == 3 }
-        XCTAssertEqual(anchor.menuItems().map(\.title), ["Share clipboard", heading, "Turn off Handoff on mini…"])
-        XCTAssertEqual(client.menuItems().map(\.title), ["Share clipboard", heading, "Turn off Handoff on this Mac…"])
+        let share = "Share the clipboard between your Macs"
+        wait("the request in both panes") { self.controls(anchor).count == 2 && self.controls(client).count == 2 }
+        XCTAssertEqual(controls(anchor).map(\.title), [share, "Turn Off Handoff on mini…"])
+        XCTAssertEqual(controls(client).map(\.title), [share, "Turn Off Handoff on This Mac…"])
         XCTAssertEqual(status(anchor)["turnOffHandoffOn"] as? [String], ["mini"])
         XCTAssertEqual(status(client)["universalClipboardHere"] as? Bool, true)
-        XCTAssertTrue(anchor.menuItems()[2].toolTip?.contains("AirDrop") == true)
+        let note = anchor.settingsPane.rows.first { $0.kind == .note(warning: true) }
+        XCTAssertTrue(note?.title.contains("AirDrop") == true)
+        // Each menu points at the pane, in one line.
+        XCTAssertEqual(anchor.attention?.pane, StatusMenu.Pane.clipboard)
+        XCTAssertEqual(client.attention?.summary, "Universal Clipboard gets in the way")
 
-        // Chosen in the anchor's menu, the setting opens on the mini, where it has to be changed.
-        let onAnchor = anchor.menuItems()[2]
-        _ = onAnchor.target?.perform(onAnchor.action, with: onAnchor)
+        // Pressed in the anchor's pane, the setting opens on the mini, where it has to be changed.
+        XCTAssertNotNil(anchor.settingsPane.rows.press("Turn Off Handoff on mini…"))
         wait("the setting to open on the mini") { openedOnTheMini == [UniversalClipboard.settingsURL] }
-        let onClient = client.menuItems()[2]
-        _ = onClient.target?.perform(onClient.action, with: onClient)
+        XCTAssertNotNil(client.settingsPane.rows.press("Turn Off Handoff on This Mac…"))
         wait("the setting to open again") { openedOnTheMini.count == 2 }
         XCTAssertEqual(openedOnTheAnchor, [])
 
-        // Once it is off there, both menus stop asking. The real check runs every five seconds.
+        // Once it is off there, both panes stop asking. The real check runs every five seconds.
         handoffOnTheMini = false
-        wait("the request to go") { anchor.menuItems().count == 1 && client.menuItems().count == 1 }
+        wait("the request to go") { self.controls(anchor).count == 1 && self.controls(client).count == 1 }
+        XCTAssertNil(anchor.attention)
         client.anchorChanged(nil)
     }
 

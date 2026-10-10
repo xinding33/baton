@@ -1,22 +1,11 @@
 import AppKit
 import BatonCore
 
-/// The Displays part of the menu: this Mac's external displays, and in the anchor's menu the
-/// other Macs' too, which are switched over the link.
+/// The Displays pane of Settings: this Mac's external displays, and on the anchor the other
+/// Macs' too, which are switched over the link. The menu only offers to reconnect one that is off.
 final class DisplayMenu: NSObject {
     private let toggle = DisplayToggle()
     private let anchor: Anchor?
-
-    /// A menu item's request: `action` for the displays of `machine`, or of this Mac if nil.
-    private final class Request: NSObject {
-        let machine: String?
-        let action: DisplayAction
-
-        init(machine: String?, action: DisplayAction) {
-            self.machine = machine
-            self.action = action
-        }
-    }
 
     init(anchor: Anchor?, client: ClientAgent?, onChange: @escaping () -> Void) {
         self.anchor = anchor
@@ -36,61 +25,58 @@ final class DisplayMenu: NSObject {
         toggle.reconnectAllAndExit()
     }
 
-    // MARK: The menu
-
-    func addItems(to menu: NSMenu) {
-        menu.addItem(.separator())
-        menu.addItem(withTitle: "Displays", action: nil, keyEquivalent: "")
-        DisplayMenu.add(toggle.panel, on: nil, to: menu, target: self)
-        for (machine, panel) in remotePanels where !panel.rows.isEmpty {
-            let item = menu.addItem(withTitle: "Displays on \(machine)", action: nil, keyEquivalent: "")
-            item.submenu = NSMenu()
-            DisplayMenu.add(panel, on: machine, to: item.submenu!, target: self)
-        }
-    }
+    // MARK: Settings and the menu
 
     private var remotePanels: [(String, DisplayPanel)] {
         (anchor?.displayPanels ?? [:]).sorted { $0.key < $1.key }
     }
 
-    static func add(_ panel: DisplayPanel, on machine: String?, to menu: NSMenu, target: DisplayMenu?) {
-        @discardableResult
-        func add(_ title: String, _ action: DisplayAction? = nil, tip: String? = nil) -> NSMenuItem {
-            // Without an action the item is shown disabled.
-            let item = menu.addItem(withTitle: title, action: action == nil ? nil : #selector(clicked(_:)), keyEquivalent: "")
-            item.target = target
-            item.representedObject = action.map { Request(machine: machine, action: $0) }
-            item.toolTip = tip
-            return item
+    private(set) lazy var settingsPane = FormPane(id: StatusMenu.Pane.displays, title: "Displays", symbol: "display") { [unowned self] in self.settingsRows() }
+
+    private func settingsRows() -> [SettingsRow] {
+        let others = remotePanels.filter { !$0.1.rows.isEmpty }
+        // On a client, and on an anchor that is alone, there is only this Mac to speak of.
+        var rows: [SettingsRow] = [.header(others.isEmpty ? "External displays" : "This Mac")]
+        rows += DisplayMenu.rows(for: toggle.panel) { [unowned self] in self.send($0, to: nil) }
+        for (machine, panel) in others {
+            rows.append(.header(machine))
+            rows += DisplayMenu.rows(for: panel) { [unowned self] in self.send($0, to: machine) }
         }
-        for row in panel.rows {
-            switch row.state {
-            case .on:
-                if let reason = row.staysOn {
-                    add("\(row.name) — stays on", tip: reason).state = .on
-                } else if panel.unavailable != nil {
-                    add(row.name).state = .on
-                } else {
-                    add(row.name, .turnOff(row.uuid), tip: "Turn off \(row.name)").state = .on
-                }
-            case .off:
-                add("\(row.name) — off", .turnOn(row.uuid), tip: "Reconnect \(row.name). Until you do, Baton turns it off whenever it connects.")
-            case .offWhenConnected:
-                add("\(row.name) — off when connected", .turnOn(row.uuid), tip: "Stop turning off \(row.name) when it connects")
-            }
-        }
-        if panel.rows.isEmpty { add("No external displays") }
-        if panel.rows.contains(where: { $0.state == .off }) { add("Reconnect All", .reconnectAll) }
-        for line in (panel.unavailable ?? "").split(separator: "\n") { add(String(line)) }
-        if let error = panel.lastError {
-            let firstLine = error.split(separator: "\n").first.map(String.init) ?? error
-            add("⚠ \(firstLine.count > 90 ? firstLine.prefix(90) + "…" : firstLine)", tip: error)
-        }
+        rows.append(.text("A display that is unticked is off while its cable stays plugged in, and Baton turns it off again whenever it connects. Quit Baton reconnects them all."))
+        return rows
     }
 
-    @objc private func clicked(_ sender: NSMenuItem) {
-        guard let request = sender.representedObject as? Request else { return }
-        send(request.action, to: request.machine)
+    /// One Mac's displays as rows: ticked while on, and `send` is handed what a click asks for.
+    static func rows(for panel: DisplayPanel, send: @escaping (DisplayAction) -> Void) -> [SettingsRow] {
+        var rows: [SettingsRow] = panel.rows.map { row in
+            switch row.state {
+            case .on:
+                // Greyed out where it has to stay on, or where nothing can be turned off for now.
+                return .toggle(row.name, on: true, enabled: row.staysOn == nil && panel.unavailable == nil, detail: row.staysOn) { _ in send(.turnOff(row.uuid)) }
+            case .off:
+                return .toggle(row.name, on: false, detail: "Off. Tick it to reconnect it.") { _ in send(.turnOn(row.uuid)) }
+            case .offWhenConnected:
+                return .toggle(row.name, on: false, detail: "Not connected. Baton turns it off when it connects; tick it to stop that.") { _ in send(.turnOn(row.uuid)) }
+            }
+        }
+        if panel.rows.isEmpty { rows.append(.text("No external displays.")) }
+        if panel.rows.contains(where: { $0.state == .off }) { rows.append(.button("Reconnect All") { send(.reconnectAll) }) }
+        if let unavailable = panel.unavailable { rows.append(.note(unavailable.replacingOccurrences(of: "\n", with: " "), warning: false)) }
+        if let error = panel.lastError { rows.append(.note(error)) }
+        return rows
+    }
+
+    /// The displays Baton has turned off, which the menu offers to reconnect: this Mac's, and on
+    /// the anchor the other Macs' as well.
+    var displaysOff: [StatusMenu.DisplayOff] {
+        func off(_ panel: DisplayPanel, on machine: String?) -> [StatusMenu.DisplayOff] {
+            panel.rows.filter { $0.state == .off }.map { StatusMenu.DisplayOff(machine: machine, uuid: $0.uuid, name: $0.name) }
+        }
+        return off(toggle.panel, on: nil) + remotePanels.flatMap { off($0.1, on: $0.0) }
+    }
+
+    func reconnect(_ display: StatusMenu.DisplayOff) {
+        send(.turnOn(display.uuid), to: display.machine)
     }
 
     private func send(_ action: DisplayAction, to machine: String?) {
@@ -105,7 +91,7 @@ final class DisplayMenu: NSObject {
     // MARK: Control commands
 
     /// `displays` prints every panel; `displays [machine] off|on <display>` and
-    /// `displays [machine] on all` do what the menu does. Displays go by name or UUID.
+    /// `displays [machine] on all` do what the pane does. Displays go by name or UUID.
     func command(_ words: [String]) -> String {
         var words = words
         var machine: String?

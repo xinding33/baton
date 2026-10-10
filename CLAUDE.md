@@ -43,6 +43,7 @@ The installed Baton is the owner's working mouse and keyboard, all day.
 
 - `swift build` and `swift test` must pass. Logic that can be tested without a Mac's hardware lives in `BatonCore` with tests.
 - Put a feature in its own source file. In shared files (`main.swift`, `Messages.swift`, `Config.swift`, `Anchor.swift`, `ClientAgent.swift`) add as little as possible, so branches merge cleanly.
+- A setting goes in its feature's pane of the Settings window, as rows (`SettingsRow`, `FormPane`), not in the menu. The menu bar item's menu is `StatusMenu` in `BatonCore`: what is done in a hurry or needs attention now, and under ten items. A pane is redrawn on the main thread every second while it shows, so its rows must not wait on anything.
 - New `Config` fields decode with `decodeIfPresent` and a default, so existing config files keep loading.
 - New `Message` cases go at the end of the enum. The anchor and the clients are always deployed together.
 - No third-party dependencies.
