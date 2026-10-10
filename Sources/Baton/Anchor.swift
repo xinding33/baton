@@ -12,7 +12,7 @@ final class Anchor {
     }
 
     private var config: Config
-    private let server: AnchorServer
+    let server: AnchorServer
     private var tap: EventTap!
     private var displayWatcher: DisplayWatcher?
     private var timer: DispatchSourceTimer?

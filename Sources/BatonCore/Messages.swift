@@ -189,6 +189,8 @@ public enum Message: Codable, Sendable {
     case displayPanel(DisplayPanel)
     /// Anchor to client: turn one of the client's displays off or on.
     case displayAction(DisplayAction)
+    /// Wake your display. A client sends it to the anchor, which passes it on to the other clients.
+    case wake(WakeRequest)
 }
 
 public enum Wire {

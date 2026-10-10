@@ -39,13 +39,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
             self.anchor = anchor
             arrangementWindow = ArrangementWindowController(anchor: anchor)
+            WakeTogether.shared.start(as: config, links: anchor.server)
         case .client:
             let client = ClientAgent(config: config, secret: secret)
             client.onStateChanged = { [weak self] in self?.refreshMenu() }
             client.start()
             self.client = client
+            WakeTogether.shared.start(as: config, links: client)
         }
         displayMenu = DisplayMenu(anchor: anchor, client: client) { [weak self] in self?.refreshMenu() }
+        WakeTogether.shared.onStateChanged = { [weak self] in self?.refreshMenu() }
 
         // Hand the mouse back before being stopped, e.g. by a redeploy.
         signal(SIGTERM, SIG_IGN)
@@ -91,8 +94,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return ScrollReverser.shared.command(Array(words.dropFirst()))
         case "displays":
             return displayMenu?.command(Array(words.dropFirst())) ?? ""
+        case "wake":
+            return WakeTogether.shared.command(Array(words.dropFirst()))
         default:
-            return "commands: status, home, pause, resume, sim, arrange, keyboard, scroll, displays"
+            return "commands: status, home, pause, resume, sim, arrange, keyboard, scroll, displays, wake"
         }
     }
 
@@ -150,6 +155,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         ScrollReverser.shared.addMenuItems(to: menu)
         displayMenu?.addItems(to: menu)
+        WakeTogether.shared.addMenuItems(to: menu)
         menu.addItem(.separator())
         menu.addItem(withTitle: "Quit Baton", action: #selector(quit), keyEquivalent: "").target = self
         statusItem.button?.title = title
