@@ -100,6 +100,30 @@ final class StayAwakeTests: XCTestCase {
         XCTAssertEqual(conditions(locked: true).heldBackBy, "the screen is locked")
     }
 
+    // MARK: Holding the screen saver off
+
+    func testScreenSaverIsHeldOffForItsOwnTime() {
+        XCTAssertEqual(ScreenSaverHold.seconds(screenSaverAfter: 300, displaySleepsAfterMinutes: 10), 300)
+    }
+
+    func testHoldEndsWhenTheDisplayWouldHaveSlept() {
+        XCTAssertEqual(ScreenSaverHold.seconds(screenSaverAfter: 1200, displaySleepsAfterMinutes: 2), 120)
+    }
+
+    func testScreenSaverThatNeverStartsNeedsNoHold() {
+        XCTAssertNil(ScreenSaverHold.seconds(screenSaverAfter: 0, displaySleepsAfterMinutes: 10))
+    }
+
+    func testScreenSaverNeverSetStartsAtTheUsualTime() {
+        XCTAssertEqual(ScreenSaverHold.seconds(screenSaverAfter: nil, displaySleepsAfterMinutes: 0), ScreenSaverHold.usualScreenSaverSeconds)
+        XCTAssertEqual(ScreenSaverHold.seconds(screenSaverAfter: nil, displaySleepsAfterMinutes: 10), 600)
+    }
+
+    func testDisplayThatNeverSleepsOrIsUnknownLeavesTheScreenSaverTime() {
+        XCTAssertEqual(ScreenSaverHold.seconds(screenSaverAfter: 300, displaySleepsAfterMinutes: 0), 300)
+        XCTAssertEqual(ScreenSaverHold.seconds(screenSaverAfter: 300, displaySleepsAfterMinutes: nil), 300)
+    }
+
     // MARK: Settings and the wire
 
     func testSettingDefaultsToOnInAnOlderFile() throws {
