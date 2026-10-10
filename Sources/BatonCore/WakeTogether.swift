@@ -101,18 +101,6 @@ public struct WakeHotKeyRecognizer {
     }
 }
 
-/// Ripple, the app that did this job before Baton. While it runs on a Mac it wakes the others,
-/// owns the hotkey and holds the Mac awake, so Baton stands down there rather than do each twice.
-public enum WakeRival {
-    /// Ripple's bundle identifiers: the current one, and the one it had before version 1.1.
-    public static let rippleBundleIDs = ["io.github.xinding33.ripple", "com.xinding.Ripple"]
-
-    public static func rippleIsRunning(among bundleIDs: some Sequence<String>) -> Bool {
-        let ripple = Set(rippleBundleIDs.map { $0.lowercased() })
-        return bundleIDs.contains { ripple.contains($0.lowercased()) }
-    }
-}
-
 /// One Mac's wake settings, kept in `wake.json` beside its config.
 public struct WakeSettings: Codable, Equatable, Sendable {
     /// Wake the other Macs when this Mac's display wakes.
@@ -174,9 +162,6 @@ public struct WakeCoordinator {
     public let name: String
     public let role: Role
     public var wakeOthers = true
-    /// Set while Ripple does this job on this Mac. Nothing starts here then and this Mac's
-    /// display is left alone, but the anchor goes on passing wakes between the clients.
-    public var standingDown = false
 
     private var ignoreDisplayWakeUntil: UInt64 = 0
     private var lastAutoWakeAt: UInt64?
@@ -189,7 +174,6 @@ public struct WakeCoordinator {
 
     /// This Mac's display woke.
     public mutating func displayWoke(now: UInt64, links: [WakeLink]) -> [Action] {
-        if standingDown { return [.log("display woke; standing down")] }
         if !wakeOthers { return [.log("display woke; waking the others is switched off")] }
         if now < ignoreDisplayWakeUntil { return [.log("display woke, as another Mac asked; not passing it on")] }
         if let last = lastAutoWakeAt, now >= last, now - last < Self.minIntervalMs {
@@ -201,7 +185,6 @@ public struct WakeCoordinator {
 
     /// Wake All Macs was chosen on this Mac.
     public mutating func wakeAll(now: UInt64, links: [WakeLink]) -> [Action] {
-        if standingDown { return [.log("wake all; standing down")] }
         return offer(WakeRequest(origin: name), skipping: [], now: now, links: links, what: "wake all")
     }
 
@@ -211,14 +194,8 @@ public struct WakeCoordinator {
         // A client speaks for itself only; what the anchor passes on names where it began.
         if role == .anchor { request.origin = sender }
         guard request.origin != name else { return [] }
-        var actions: [Action] = []
-        if standingDown {
-            actions.append(.log("\(request.origin) asked to wake this Mac; standing down"))
-        } else {
-            ignoreDisplayWakeUntil = now + Self.echoWindowMs
-            actions.append(.wakeDisplay)
-            actions.append(.log("woken by \(request.origin)"))
-        }
+        ignoreDisplayWakeUntil = now + Self.echoWindowMs
+        var actions: [Action] = [.wakeDisplay, .log("woken by \(request.origin)")]
         if role == .anchor {
             // To the other clients, and never back to the one it came from.
             actions += offer(request, skipping: [sender], now: now, links: links, what: "passing on \(sender)'s wake")
