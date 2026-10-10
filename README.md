@@ -6,6 +6,26 @@ edge of one Mac's screen onto the next Mac's, and typing follows it.
 One Mac, the **anchor**, has the mouse and keyboard attached. It decides which machine the cursor
 is on and forwards input to the others (**clients**), which replay it.
 
+## Install
+
+Requires macOS 14 or later. Releases are universal (Apple silicon and Intel), signed with a
+Developer ID and notarized by Apple.
+
+```sh
+brew install --cask xinding33/tap/baton
+```
+
+Or download `Baton-x.y.z.zip` from the
+[latest release](https://github.com/xinding33/baton/releases/latest), unzip it, and move
+`Baton.app` to Applications.
+
+Do this on each Mac, then open Baton there. After that Baton keeps itself up to date on all of
+them together (see [Updates](#updates)), so `brew upgrade` leaves it alone.
+
+To uninstall, switch **Open at Login** off and quit Baton from its menu, then run
+`brew uninstall --cask baton` (or delete `Baton.app`). `brew uninstall --zap --cask baton` also
+removes its settings and logs.
+
 ## Setting up
 
 Open Baton on each Mac. A Mac that has not been set up shows a window that asks for:
@@ -256,8 +276,7 @@ its menu and its Clipboard pane say that copies made there are not shared.
 
 ## Updates
 
-Releases are universal (Apple silicon and Intel), signed with a Developer ID and notarized by
-Apple. A release build updates itself from Baton's
+A release build updates itself from Baton's
 [releases](https://github.com/xinding33/baton/releases).
 
 Macs on different versions cannot share input, so they never update one by one. The anchor
@@ -319,9 +338,9 @@ password), `NOTARY_KEY`, `NOTARY_KEY_ID` and `NOTARY_ISSUER_ID` (a base64-encode
 Connect API key), and `TAP_DEPLOY_KEY` (a deploy key with write access to
 [xinding33/homebrew-tap](https://github.com/xinding33/homebrew-tap)).
 
-The workflow can also write the `baton` cask to the tap, with `scripts/update-cask.sh`. That step
-is off until Baton can set itself up on a Mac that has never run it: set `PUBLISH_CASK` to
-`"true"` at the top of the workflow to turn it on.
+The workflow then writes the `baton` cask for that release to the tap, with
+`scripts/update-cask.sh`. `PUBLISH_CASK` at the top of the workflow switches that step: set it to
+`"false"` to publish a release without touching the tap.
 
 To produce the same notarized ZIP locally, save notary credentials once with
 `xcrun notarytool store-credentials wink-notary`, then run `bash scripts/release.sh`.
