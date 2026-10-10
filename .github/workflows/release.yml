@@ -8,10 +8,9 @@ permissions:
   contents: write
 
 env:
-  # Until Baton can set itself up on a Mac that has never run it, a cask would install an app
-  # that cannot start. Change this to "true" and every release also updates the cask in
-  # xinding33/homebrew-tap.
-  PUBLISH_CASK: "false"
+  # Every release also updates the cask in xinding33/homebrew-tap. "false" publishes a release
+  # without touching the tap.
+  PUBLISH_CASK: "true"
 
 jobs:
   release:
