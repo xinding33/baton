@@ -506,6 +506,18 @@ final class Anchor {
         onStateChanged?()
     }
 
+    /// What the updater looks at to pick a moment for a restart (Updates.swift).
+    var restartConditions: RestartConditions {
+        let now = Net.monotonicMillis()
+        return RestartConditions(
+            handoffInProgress: handoffInProgress != nil || mover.isBusy,
+            keysDown: keyCapture.anyKeyDown || !forwardedKeysDown.isEmpty,
+            buttonsDown: !buttonsDown.isEmpty,
+            msSinceKey: now - max(keyCapture.lastActivityAt, lastForwardedKeyAt),
+            msSincePointer: now - lastPointerActivityAt
+        )
+    }
+
     /// Runs single Bluetooth steps on this Mac; the outcome goes to the log.
     func bluetoothSteps(_ words: [String]) -> String {
         guard let address = config.keyboardAddress else { return "no keyboardAddress in the config" }

@@ -13,7 +13,8 @@ The installed Baton is the owner's working mouse and keyboard, all day.
 | `mbp` | client, Wi-Fi only | `macbook` |
 
 - **Only the main checkout (`~/code/baton`, branch `main`) deploys.** From a worktree or feature branch, do not run `scripts/deploy.sh` or `scripts/install-agent.sh`, do not touch `~/Applications/Baton.app`, and do not `launchctl` the `com.xinding.baton` agent on any Mac. Two branches deploying in turn would swap the build under the owner's hands.
-- To run a build without touching the installed one, start a second instance with `BATON_HOME=<temp dir>` (own config, secret, log and control socket) and a different `port` in its config. A second instance must not install an event tap or move the cursor on a Mac someone is using.
+- To run a build without touching the installed one, start a second instance with `BATON_HOME=<temp dir>` (own config, secret, log and control socket) and a different `port` in its config. A second instance must not install an event tap or move the cursor on a Mac someone is using. `Baton update-check run` and `Baton display-check run` start one subsystem by itself for that reason.
+- **Only the owner tags.** Pushing a `v*` tag publishes a release, and every Mac that runs a release build installs it within a day. To try the updater, publish a prerelease by hand (`gh release create --prerelease`, from a tag on a commit without the workflow) and point test copies at it with `Baton ctl update install <version>`; delete it afterwards.
 - Ask before anything the owner would see or feel: moving the shared keyboard, turning a display off, sleeping a Mac, changing a system setting.
 - `Baton ctl ...` talks to the running agent. From scripts, wrap it so a stuck agent cannot hang you: `perl -e 'alarm 6; exec @ARGV' ~/Applications/Baton.app/Contents/MacOS/Baton ctl status`.
 - Logs: `~/Library/Logs/Baton/baton.log` on each Mac.
@@ -26,6 +27,9 @@ The installed Baton is the owner's working mouse and keyboard, all day.
 - **Turning a display off or on blocks** until the system has rearranged the screens, and then waits up to two seconds for the change to show. `DisplayController` and its files are only used on the queue in `Sources/Baton/DisplayToggle.swift`. An instance run with `BATON_HOME` never switches a display.
 - **Timers that must keep firing use `repeatingTimer`** (`Net.swift`), not `Timer`: run-loop timers pause while a menu is open.
 - **The pasteboard is read and written only on `ClipboardService`'s queue.** A read can wait on the app that made the copy, or on a privacy alert. Clipboard data never goes on the input link either: it has its own connection (`port` + 1), so megabytes cannot hold up the heartbeat.
+- **The update link is frozen.** The input link refuses a Mac on another version, so a Mac that slept through an update learns which version to fetch on the update link (`port` + 2). Every release ever published must keep reading `hello`, `prepare`, `prepared` and `install` as `Sources/BatonCore/UpdateLink.swift` writes them, over the same TLS and framing. Add keys and message types; never rename, remove or reinterpret one, and keep versions dotted numbers. `UpdateLinkTests` pins the bytes.
+- **An update restarts Baton by exiting with a failure**, and the launch agent's `KeepAlive` starts the new copy (`Relaunch` in `Sources/Baton/Updates.swift`). An agent that does not restart Baton after a failed exit would leave every Mac without Baton after an update.
+- **`scripts/deploy.sh` signs with the releases' Developer ID**, so the signature does not tell a deployed build from a release. `BatonBuild` in `Info.plist` does: only `scripts/release.sh` stamps `release`, and nothing else ever replaces itself. Keep it that way, or a release would overwrite what was just deployed.
 - **A new permission prompt on a client can strand it**, since nobody may be at that Mac to answer. Say so in your summary if a change needs one.
 
 ## The repo is public

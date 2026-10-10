@@ -168,21 +168,81 @@ on the Mac where something was just copied; set Baton to always allow under Priv
 Paste from Other Apps on each Mac. Until then that Mac still receives the others' copies, and
 its menu says that copies made there are not shared.
 
+## Updates
+
+Releases are universal (Apple silicon and Intel), signed with a Developer ID and notarized by
+Apple. A release build updates itself from Baton's
+[releases](https://github.com/xinding33/baton/releases).
+
+Macs on different versions cannot share input, so they never update one by one. The anchor
+leads, and all of them move together:
+
+- Once a day the anchor checks GitHub. It downloads a new release, and so does every client that
+  is connected. Each Mac checks that its download is that release and is signed by the same
+  developer as the copy it replaces.
+- Nothing changes until every connected Mac has the release ready. If one of them cannot get it,
+  none is updated, and the anchor tries again an hour later.
+- Then the anchor waits until the mouse and keyboard have been left alone for a minute, and never
+  restarts during a keyboard handoff or while a key or mouse button is down. If they are in use
+  for four hours on end, a pause in typing has to do. Every Mac swaps the
+  new copy in for the one it is running, wherever that is, and restarts. The cursor comes home to
+  the anchor first, and sharing is back a second or two later.
+- A Mac that was asleep or away catches up by itself: when it next reaches the anchor it is told
+  which version to fetch, and restarts into it.
+- A Mac that is ahead of the anchor, say after `brew upgrade` on that Mac alone, pulls the anchor
+  and the others up to its release. Versions only ever go up.
+
+**Check for Updates…** in the menu bar item looks now, on any Mac, and offers to install what it
+finds on all of them; then a pause in typing is enough for the restart. **Install Updates
+Automatically** is on by default. It is the anchor's switch and counts for every Mac; a client
+changes it on the anchor. With it off, a new release waits for **Check for Updates…**, but Macs
+on different versions are still brought to the newest one among them.
+
+The Macs settle this on a connection of its own, two ports above `port`. It stays readable
+across versions, so a Mac on an old release is not shut out the way it is from the input link.
+While versions differ, each menu says which Mac has which.
+
+A development build never updates itself: `scripts/deploy.sh` installs those, and its Macs run
+exactly what was deployed until the next deploy. `Baton update-check` says which kind a copy is.
+
 ## Build and install
 
 ```sh
 swift test
 scripts/deploy.sh            # build, sign, install and restart on every machine
 scripts/deploy.sh mini       # only some machines
+bash scripts/build.sh        # just build dist/Baton.app, ad-hoc signed
 ```
 
-`scripts/deploy.sh` lists the machines and their SSH hosts. Each Mac needs these granted once in
+`scripts/deploy.sh` lists the machines and their SSH hosts, and installs a development build on
+them. To put them on a release instead, which then keeps itself up to date, unzip the release
+and run `BATON_APP=path/to/Baton.app scripts/deploy.sh`.
+
+Each Mac needs these granted once in
 System Settings → Privacy & Security:
 
 | Mac | Permissions |
 |---|---|
 | anchor | Accessibility, Bluetooth |
 | clients | Accessibility, Local Network, Bluetooth |
+
+### Release
+
+Pushing a `v*` tag runs `.github/workflows/release.yml`, which tests, signs with the hardened
+runtime, notarizes and staples the app, and publishes `Baton-x.y.z.zip` to a GitHub Release.
+From then on every Mac that runs a release build installs it within a day. The workflow needs
+these secrets in a `release` environment restricted to `v*` tags: `DEVELOPER_ID_P12` and
+`DEVELOPER_ID_P12_PASSWORD` (the base64-encoded Developer ID Application certificate and its
+password), `NOTARY_KEY`, `NOTARY_KEY_ID` and `NOTARY_ISSUER_ID` (a base64-encoded App Store
+Connect API key), and `TAP_DEPLOY_KEY` (a deploy key with write access to
+[xinding33/homebrew-tap](https://github.com/xinding33/homebrew-tap)).
+
+The workflow can also write the `baton` cask to the tap, with `scripts/update-cask.sh`. That step
+is off until Baton can set itself up on a Mac that has never run it: set `PUBLISH_CASK` to
+`"true"` at the top of the workflow to turn it on.
+
+To produce the same notarized ZIP locally, save notary credentials once with
+`xcrun notarytool store-credentials wink-notary`, then run `bash scripts/release.sh`.
 
 ## Controls
 
@@ -207,6 +267,11 @@ System Settings → Privacy & Security:
 - `Baton display-check` prints what display control sees on a Mac. It works without the agent
   and changes nothing.
 - `Baton ctl clipboard` shows what the shared clipboard last did; `clipboard on|off` switches it.
+- `Baton ctl update` shows this Mac's version, what the updater is doing and, on the anchor, each
+  Mac's version; `update check` looks for a release now, `update install <version>` moves every
+  Mac to that release, and `update auto on|off` switches automatic updates.
+- `Baton update-check` prints what kind of copy this is, how it is signed, whether it updates
+  itself and the latest release. It works without the agent and changes nothing.
 - `Baton ctl sim move <dx> <dy>` (also `enter`, `click`, `key`, `scroll`) feeds synthetic input
   through the anchor, for testing without touching the mouse. On a client, `sim local` stands in
   for a touch of its trackpad and `sim sleep` goes through what it does before sleeping.
@@ -218,6 +283,11 @@ Logs are in `~/Library/Logs/Baton/baton.log`.
 Machines authenticate with a shared secret (`secret.key`, created by the first deploy and copied
 over SSH). Control traffic uses TLS with that secret as a pre-shared key; cursor positions travel
 as datagrams sealed with a per-session ChaCha20-Poly1305 key handed out over the TLS link.
+
+An update is fetched from GitHub over HTTPS, by each Mac for itself; the Macs only tell each
+other which version. It is installed only if it is the release build it claims to be and its
+signature satisfies the designated requirement of the copy it replaces, which names the bundle
+identifier and the developer's team.
 
 ## Development
 

@@ -57,6 +57,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         displayMenu = DisplayMenu(anchor: anchor, client: client) { [weak self] in self?.refreshMenu() }
         WakeTogether.shared.onStateChanged = { [weak self] in self?.refreshMenu() }
         clipboard.start()
+        Updates.shared.onStateChanged = { [weak self] in self?.refreshMenu() }
+        Updates.shared.start(as: config, secret: secret, anchor: anchor, client: client)
 
         // Hand the mouse back before being stopped, e.g. by a redeploy.
         signal(SIGTERM, SIG_IGN)
@@ -113,13 +115,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return WakeTogether.shared.command(Array(words.dropFirst()))
         case "clipboard":
             return clipboard?.command(Array(words.dropFirst())) ?? ""
+        case "update":
+            return Updates.shared.command(Array(words.dropFirst()))
         case "icon":
             guard words.count == 2, ["show", "hide"].contains(words[1]) else { return "usage: icon show|hide" }
             MenuIcon.setHidden(words[1] == "hide")
             refreshMenu()
             return "the menu bar icon is \(MenuIcon.isHidden ? "hidden" : "shown")"
         default:
-            return "commands: status, home, pause, resume, sim, arrange, keyboard, scroll, displays, wake, clipboard, icon"
+            return "commands: status, home, pause, resume, sim, arrange, keyboard, scroll, displays, wake, clipboard, update, icon"
         }
     }
 
@@ -180,6 +184,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         WakeTogether.shared.addMenuItems(to: menu)
         menu.addItem(.separator())
         clipboard?.menuItems().forEach(menu.addItem)
+        Updates.shared.addMenuItems(to: menu)
         menu.addItem(.separator())
         menu.addItem(withTitle: "Hide Menu Bar Icon…", action: #selector(hideIcon), keyEquivalent: "").target = self
         menu.addItem(withTitle: "Quit Baton", action: #selector(quit), keyEquivalent: "").target = self
@@ -220,6 +225,9 @@ if arguments.first == "display-watchdog" {
 }
 if arguments.first == "display-check" {
     exit(runDisplayCheck(Array(arguments.dropFirst())))
+}
+if arguments.first == "update-check" {
+    exit(runUpdateCheck(Array(arguments.dropFirst())))
 }
 
 // Opened by hand while the agent is already running: that is how a hidden menu bar icon comes

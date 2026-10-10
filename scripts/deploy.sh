@@ -1,6 +1,10 @@
 #!/bin/bash
 # Builds Baton.app, signs it, and installs it on this Mac (the anchor) and the client Macs.
 # Usage: deploy.sh [name ...]   (default: all machines)
+#
+# What it builds is a development build: it never replaces itself with a release, so the Macs
+# run exactly what was deployed. BATON_APP=<path to a Baton.app> installs that bundle instead,
+# e.g. an unzipped release, which from then on keeps every Mac up to date by itself.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -11,15 +15,16 @@ MACHINES=(
     "mbp client macbook"
 )
 IDENTITY="${BATON_IDENTITY:-Developer ID Application}"
-APP=build/Baton.app
+APP="${BATON_APP:-dist/Baton.app}"
 SUPPORT="Library/Application Support/Baton"
 
-swift build -c release 2>&1 | tail -1
-rm -rf "$APP"
-mkdir -p "$APP/Contents/MacOS"
-cp "$(swift build -c release --show-bin-path)/Baton" "$APP/Contents/MacOS/Baton"
-cp scripts/Info.plist "$APP/Contents/Info.plist"
-codesign --force --sign "$IDENTITY" "$APP"
+if [ -n "${BATON_APP:-}" ]; then
+    codesign --verify --strict "$APP"
+else
+    # For this Mac's architecture only, but put together and signed as a release is, hardened
+    # runtime included, so that what is used every day is what a release will do.
+    SIGN_IDENTITY="$IDENTITY" BATON_ARCHS=native BATON_BUILD=development bash scripts/build.sh
+fi
 
 # Every machine shares one secret; it is created here once and copied to the others.
 mkdir -p "$HOME/$SUPPORT"
