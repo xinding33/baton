@@ -191,6 +191,8 @@ public enum Message: Codable, Sendable {
     case displayAction(DisplayAction)
     /// Wake your display. A client sends it to the anchor, which passes it on to the other clients.
     case wake(WakeRequest)
+    /// The sender is in use. A client sends it to the anchor, which passes it on to the other clients.
+    case inUse
 }
 
 public enum Wire {

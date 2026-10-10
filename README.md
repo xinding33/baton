@@ -121,9 +121,18 @@ Awake** holds off idle system sleep for that reason; the display still sleeps on
 **Only on Power Adapter** on, a MacBook on battery sleeps as usual and is out of reach until it
 wakes by itself.
 
+While one Mac is in use, the displays of the others stay on. A Mac whose own mouse, trackpad or
+keyboard is being used says so every ten seconds, and each of the others counts that as activity
+of its own, so its display sleep time runs from your last input at any of them. On the anchor
+that covers the shared mouse and keyboard wherever the cursor is. **Stay Awake While Another Mac
+Is in Use** switches this off for one Mac, and **Only on Power Adapter** applies to it too. It
+keeps a display on and never turns one on: a display that is asleep stays asleep, and so does a
+Mac at its lock screen.
+
 Each Mac has its own switches in the menu bar item: **Wake Others When This Mac Wakes**, **Keep
-This Mac Awake** and **Only on Power Adapter**. They are kept in `wake.json` next to the config,
-along with the hotkey (`"hotKey": null` for none; restart the agent after editing the file).
+This Mac Awake**, **Stay Awake While Another Mac Is in Use** and **Only on Power Adapter**. They
+are kept in `wake.json` next to the config, along with the hotkey (`"hotKey": null` for none;
+restart the agent after editing the file).
 
 Baton takes over from [Ripple](https://github.com/xinding33/ripple), and a Mac's first run copies
 the three switches from Ripple's settings on that Mac. Do not run the two on the same Mac: every
@@ -197,8 +206,9 @@ System Settings → Privacy & Security:
 - `Baton ctl scroll` shows whether this Mac reverses the wheel, and what the last scroll event was
   and what became of it; `scroll on|off`, `scroll vertical on|off` and `scroll horizontal on|off`
   change it.
-- `Baton ctl wake` shows this Mac's wake settings, the Macs it can reach and what it last did;
-  `wake all` wakes every Mac, and `wake others on|off`, `wake keep on|off` and
+- `Baton ctl wake` shows this Mac's wake settings, the Macs it can reach, what it last did, and
+  when it last told the others it is in use or heard that one of them is; `wake all` wakes every
+  Mac, and `wake others on|off`, `wake keep on|off`, `wake in-use on|off` and
   `wake adapter-only on|off` change the settings.
 - `Baton ctl arrange show` opens the arrangement window.
 - `Baton ctl displays` prints each Mac's displays as the menu shows them; `displays off <name>`,
