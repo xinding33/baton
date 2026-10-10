@@ -65,6 +65,11 @@ final class SharedClipboard: NSObject {
         }
     }
 
+    /// Anchor only: Pause Sharing was switched, and the clipboard pauses with it on every Mac.
+    func setPaused(_ value: Bool) {
+        service.setPaused(value)
+    }
+
     /// Copies made here do not reach the other Macs because macOS has not been told to let
     /// Baton read them.
     private func pasteBlocked(_ status: ClipboardService.Status) -> Bool {
@@ -99,6 +104,9 @@ final class SharedClipboard: NSObject {
                 self.service.setEnabled(on)
             },
         ]
+        if status.enabled, status.paused {
+            rows.append(.note("Sharing is paused, in \(config.role == .anchor ? "Baton’s menu" : "the menu of the anchor’s Baton"). Until it is resumed, a copy stays on the Mac it was made on.", warning: false))
+        }
         if pasteBlocked(status) {
             rows.append(.note("Copies made on this Mac are not shared. In System Settings › Privacy & Security › Paste from Other Apps, set Baton to always allow."))
         }
@@ -125,6 +133,7 @@ final class SharedClipboard: NSObject {
             let status = service.status
             var report: [String: Any] = [
                 "enabled": status.enabled,
+                "paused": status.paused,
                 "pasteAccess": status.access.rawValue,
                 "maxBytes": status.maxBytes,
                 "shared": status.shared,

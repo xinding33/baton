@@ -173,6 +173,16 @@ final class WakeTogether: NSObject {
         return outcome != .pass
     }
 
+    /// Anchor only: Pause Sharing was switched. While it is on, a display that wakes wakes no
+    /// other Mac and the Macs do not keep each other awake. Wake All Macs still works.
+    func setPaused(_ value: Bool) {
+        guard let coordinator, value != coordinator.paused else { return }
+        self.coordinator?.paused = value
+        inUse?.paused = value
+        note(value ? "sharing is paused: only Wake All Macs reaches the other Macs" : "sharing is resumed")
+        onStateChanged?()
+    }
+
     // MARK: Staying awake together
 
     /// Called by every event tap for each event from this Mac's own devices. While they are in
@@ -220,14 +230,15 @@ final class WakeTogether: NSObject {
     /// The Sleep & Wake pane of Settings.
     private(set) lazy var settingsPane = FormPane(id: StatusMenu.Pane.wake, title: "Sleep & Wake", symbol: "moon") { [unowned self] in
         guard self.coordinator != nil else { return [.text("Waking together has not started on this Mac.")] }
-        return WakeTogether.rows(for: self.settings, holdingAwake: self.keepAwake.isHolding, onPowerAdapter: KeepAwake.onPowerAdapter) { [unowned self] in self.change($0, $1) }
+        return WakeTogether.rows(for: self.settings, holdingAwake: self.keepAwake.isHolding, onPowerAdapter: KeepAwake.onPowerAdapter, sharingPaused: self.coordinator?.paused == true) { [unowned self] in self.change($0, $1) }
     }
 
     /// The pane's rows for `settings`. `change` is handed a line for the log and what a click alters.
-    static func rows(for settings: WakeSettings, holdingAwake: Bool, onPowerAdapter: Bool, change: @escaping (String, (inout WakeSettings) -> Void) -> Void) -> [SettingsRow] {
+    static func rows(for settings: WakeSettings, holdingAwake: Bool, onPowerAdapter: Bool, sharingPaused: Bool = false, change: @escaping (String, (inout WakeSettings) -> Void) -> Void) -> [SettingsRow] {
         let paused = settings.keepAwake && !holdingAwake
         let waiting = settings.stayAwakeWithOthers && settings.keepAwakeOnlyOnPower && !onPowerAdapter
-        return [
+        let pause: [SettingsRow] = sharingPaused ? [.note("Sharing is paused, in Baton’s menu. Until it is resumed, a display that wakes does not wake the other Macs, and a Mac in use does not keep the others awake. Wake All Macs still works.", warning: false)] : []
+        return pause + [
             .header("Waking"),
             .toggle("Wake the other Macs when this Mac wakes", on: settings.wakeOthers,
                     detail: "Wake All Macs, in Baton’s menu\(settings.hotKey.map { " or with \($0.display)" } ?? ""), wakes them whenever you ask.") { on in
@@ -270,7 +281,7 @@ final class WakeTogether: NSObject {
         default:
             return usage
         }
-        let report: [String: Any] = [
+        var report: [String: Any] = [
             "name": coordinator.name,
             "role": coordinator.role.rawValue,
             "wakeOthers": settings.wakeOthers,
@@ -285,6 +296,7 @@ final class WakeTogether: NSObject {
             "links": (links?.wakeLinks ?? []).map(\.name).sorted(),
             "recent": recent,
         ]
+        if coordinator.role == .anchor { report["sharingPaused"] = coordinator.paused }
         return jsonString(report)
     }
 

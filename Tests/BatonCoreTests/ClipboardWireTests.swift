@@ -27,6 +27,7 @@ final class ClipboardWireTests: XCTestCase {
             .hello(ClipboardHello(name: "mini", have: ClipboardStamp(time: 1, origin: "studio"))),
             .hello(ClipboardHello(name: "mini", have: nil)),
             .settings(ClipboardSettings(enabled: true, maxBytes: 1 << 25)),
+            .settings(ClipboardSettings(enabled: true, maxBytes: 1 << 25, paused: true)),
             .setEnabled(false),
             .begin(header),
             .chunk(transfer: 9, bytes(1000)),
@@ -42,6 +43,11 @@ final class ClipboardWireTests: XCTestCase {
         for frame in all { parser.append(frame.encoded()) }
         for frame in all { XCTAssertEqual(try parser.next(), frame) }
         XCTAssertNil(try parser.next())
+    }
+
+    func testSettingsThatDoNotSayAreNotPaused() throws {
+        let settings = try JSONDecoder().decode(ClipboardSettings.self, from: Data(#"{"enabled": true, "maxBytes": 1024}"#.utf8))
+        XCTAssertEqual(settings, ClipboardSettings(enabled: true, maxBytes: 1024, paused: false))
     }
 
     func testParserTakesTheStreamInPiecesOfAnySize() throws {

@@ -80,6 +80,14 @@ go above and between those:
 - **Reconnect** and a display's name, while Baton has that display turned off;
 - what the updater is doing while it installs a release, or which Mac is on another version.
 
+**Pause Sharing** leaves each Mac to itself until **Resume Sharing**. The cursor comes back to
+the anchor and stays there, the shared keyboard stops following it, a copy stays on the Mac it
+was made on, a display that wakes does not wake the others, and a Mac in use does not keep the
+others awake. The switches in Settings stay as they are, and the Sleep & Wake and Clipboard panes
+say that they are paused. What is copied during a pause is not sent afterwards either. What you
+ask for by hand still happens: **Wake All Macs**, moving the keyboard from the menu, turning a
+display off or on. Updates carry on too. A pause lasts until it is resumed or Baton restarts.
+
 Everything that is set once and left alone is in **Settings…**, a pane for each part of Baton:
 
 | Pane | What is there | Applies to |
@@ -209,7 +217,7 @@ is turned off, it moves to one that is left.
 When one Mac's display wakes, Baton wakes the displays of the others. The wake travels over
 Baton's own link: a client tells the anchor, which wakes its own display and tells the other
 clients. A Mac woken this way does not pass the wake on again. **Wake All Macs** in the menu bar
-item, or ⌃⌥⌘W on any Mac, does the same on request.
+item, or ⌃⌥⌘W on any Mac, does the same on request, also while sharing is paused.
 
 Only a Mac whose system is awake can be woken, since a sleeping Mac has no link. **Keep this Mac
 awake** holds off idle system sleep for that reason; the display still sleeps on schedule. With
@@ -349,7 +357,8 @@ To produce the same notarized ZIP locally, save notary credentials once with
 
 - **⌃⌥⌘⎋** brings the cursor back to the anchor.
 - **⌃⌥⌘W** wakes every Mac's display.
-- The menu bar item (⇄) shows where the cursor is and can pause sharing. What needs attention on
+- The menu bar item (⇄) shows where the cursor is and can pause sharing: the cursor, the keyboard
+  following it, the clipboard, and waking and staying awake together. What needs attention on
   that Mac, such as a missing permission, is at the top of its menu. See The menu and Settings.
 - **Settings…** opens the window with a pane for each part of Baton.
 - Unticking **Show in the menu bar**, under General, removes the item on that Mac while Baton
