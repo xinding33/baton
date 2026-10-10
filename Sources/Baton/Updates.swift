@@ -77,12 +77,18 @@ enum Relaunch {
 
     static func now() -> Never {
         if isLaunchdJob { exit(75) }
-        // Opened by hand: something has to outlive this process to start the new copy, with the
-        // same arguments and environment. `Process` puts it in a process group of its own.
+        // Opened by hand: something has to outlive this process to start the new copy. `Process`
+        // puts it in a process group of its own.
+        var start = [Bundle.main.executablePath ?? CommandLine.arguments[0]] + CommandLine.arguments.dropFirst()
+        if start.count == 1, Bundle.main.bundlePath.hasSuffix(".app") {
+            // Through LaunchServices, as when it was opened, so that the new process stands for
+            // itself where permissions are concerned.
+            start = ["/usr/bin/open", "-n", Bundle.main.bundlePath]
+            if let home = ProcessInfo.processInfo.environment["BATON_HOME"] { start += ["--env", "BATON_HOME=\(home)"] }
+        }
         let child = Process()
         child.executableURL = URL(fileURLWithPath: "/bin/sh")
-        child.arguments = ["-c", "while kill -0 \(getpid()) 2>/dev/null; do sleep 0.1; done; exec \"$0\" \"$@\"",
-                           Bundle.main.executablePath ?? CommandLine.arguments[0]] + CommandLine.arguments.dropFirst()
+        child.arguments = ["-c", "while kill -0 \(getpid()) 2>/dev/null; do sleep 0.1; done; exec \"$@\"", "sh"] + start
         child.standardInput = FileHandle.nullDevice
         child.standardOutput = FileHandle.nullDevice
         child.standardError = FileHandle.nullDevice
