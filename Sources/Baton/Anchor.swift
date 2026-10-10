@@ -187,6 +187,11 @@ final class Anchor {
         }
     }
 
+    func setShareClipboard(_ value: Bool) {
+        config.shareClipboard = value
+        saveConfig()
+    }
+
     // MARK: Focus changes
 
     private func motion(_ flags: CGEventFlags = []) -> Motion {

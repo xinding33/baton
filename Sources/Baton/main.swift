@@ -11,6 +11,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var terminationSource: DispatchSourceSignal?
     private var arrangementWindow: ArrangementWindowController?
     private var displayMenu: DisplayMenu?
+    private var clipboard: SharedClipboard?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         let config: Config
@@ -27,6 +28,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Input has to flow without timer coalescing or App Nap.
         activity = ProcessInfo.processInfo.beginActivity(options: [.userInitiatedAllowingIdleSystemSleep, .latencyCritical], reason: "Sharing input")
 
+        let clipboard = SharedClipboard(config: config, secret: secret)
+        clipboard.onStateChanged = { [weak self] in self?.refreshMenu() }
+        self.clipboard = clipboard
+
         switch config.role {
         case .anchor:
             let anchor = Anchor(config: config, secret: secret)
@@ -40,15 +45,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self.anchor = anchor
             arrangementWindow = ArrangementWindowController(anchor: anchor)
             WakeTogether.shared.start(as: config, links: anchor.server)
+            clipboard.onSettingChanged = { [weak anchor] in anchor?.setShareClipboard($0) }
         case .client:
             let client = ClientAgent(config: config, secret: secret)
             client.onStateChanged = { [weak self] in self?.refreshMenu() }
+            client.onAnchorChanged = { [weak clipboard] in clipboard?.anchorChanged($0) }
             client.start()
             self.client = client
             WakeTogether.shared.start(as: config, links: client)
         }
         displayMenu = DisplayMenu(anchor: anchor, client: client) { [weak self] in self?.refreshMenu() }
         WakeTogether.shared.onStateChanged = { [weak self] in self?.refreshMenu() }
+        clipboard.start()
 
         // Hand the mouse back before being stopped, e.g. by a redeploy.
         signal(SIGTERM, SIG_IGN)
@@ -96,8 +104,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return displayMenu?.command(Array(words.dropFirst())) ?? ""
         case "wake":
             return WakeTogether.shared.command(Array(words.dropFirst()))
+        case "clipboard":
+            return clipboard?.command(Array(words.dropFirst())) ?? ""
         default:
-            return "commands: status, home, pause, resume, sim, arrange, keyboard, scroll, displays, wake"
+            return "commands: status, home, pause, resume, sim, arrange, keyboard, scroll, displays, wake, clipboard"
         }
     }
 
@@ -156,6 +166,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         ScrollReverser.shared.addMenuItems(to: menu)
         displayMenu?.addItems(to: menu)
         WakeTogether.shared.addMenuItems(to: menu)
+        menu.addItem(.separator())
+        clipboard?.menuItems().forEach(menu.addItem)
         menu.addItem(.separator())
         menu.addItem(withTitle: "Quit Baton", action: #selector(quit), keyEquivalent: "").target = self
         statusItem.button?.title = title

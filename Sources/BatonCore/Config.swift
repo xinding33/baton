@@ -19,6 +19,10 @@ public struct Config: Codable, Sendable {
     /// Anchor only: move the keyboard to whichever machine the cursor settles on.
     public var keyboardFollows: Bool
     public var handoffStrategy: HandoffStrategy
+    /// Anchor only: share what is copied on one Mac with the others.
+    public var shareClipboard: Bool
+    /// Anchor only: a copy larger than this many megabytes is not shared.
+    public var clipboardMaxMB: Int
 
     public init(name: String, role: Role) {
         self.name = name
@@ -31,6 +35,8 @@ public struct Config: Codable, Sendable {
         keyboardAddress = nil
         keyboardFollows = false
         handoffStrategy = .reconnect
+        shareClipboard = true
+        clipboardMaxMB = 32
     }
 
     public init(from decoder: Decoder) throws {
@@ -45,6 +51,8 @@ public struct Config: Codable, Sendable {
         keyboardAddress = try c.decodeIfPresent(String.self, forKey: .keyboardAddress)
         keyboardFollows = try c.decodeIfPresent(Bool.self, forKey: .keyboardFollows) ?? false
         handoffStrategy = try c.decodeIfPresent(HandoffStrategy.self, forKey: .handoffStrategy) ?? .reconnect
+        shareClipboard = try c.decodeIfPresent(Bool.self, forKey: .shareClipboard) ?? true
+        clipboardMaxMB = try c.decodeIfPresent(Int.self, forKey: .clipboardMaxMB) ?? 32
     }
 
     public func timeout(for peer: String) -> TimeInterval {

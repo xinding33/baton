@@ -8,5 +8,6 @@ let package = Package(
         .target(name: "BatonCore"),
         .executableTarget(name: "Baton", dependencies: ["BatonCore"]),
         .testTarget(name: "BatonCoreTests", dependencies: ["BatonCore"]),
+        .testTarget(name: "BatonTests", dependencies: ["Baton"]),
     ]
 )

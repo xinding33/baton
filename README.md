@@ -124,6 +124,37 @@ Baton takes over from [Ripple](https://github.com/xinding33/ripple), and a Mac's
 the three switches from Ripple's settings on that Mac. While Ripple is running on a Mac, Baton
 leaves waking, the hotkey and keeping awake to it there, and the menu says so; the anchor still
 passes other Macs' wakes along. Quit Ripple and Baton takes over at once.
+## The shared clipboard
+
+What is copied on one Mac can be pasted on the others: text, rich text, links and images. A copy
+is sent to the other Macs the moment it is made, so it is already there when the cursor arrives.
+**Share clipboard** in the menu bar item, on any Mac, switches it for all of them.
+
+Not shared:
+
+- files copied in Finder, and anything else that refers to a file;
+- anything its app marks as a password or as temporary (password managers do);
+- another app's private formats: a Keynote slide arrives as its picture and text;
+- a copy larger than `clipboardMaxMB` in the anchor's config (32 by default). The other Macs then
+  keep what they had, and `Baton ctl clipboard` says why.
+
+The newest copy made on any Mac wins everywhere. A Mac that was away gets it when it connects,
+unless something was copied on that Mac since.
+
+With **Handoff** on, Universal Clipboard offers each copy to the other Macs as well. Baton never
+reads or passes on a clipboard that arrived that way, and keeps what it writes out of Handoff, so
+the two cannot loop; but macOS may still put its own, slower copy in place of the one Baton
+delivered. Turning Handoff off on the clients (System Settings → General → AirDrop & Handoff)
+rules that out. With it left on at the anchor, an iPhone's clipboard still reaches the anchor;
+Baton does not pass it on to the clients.
+
+The clipboard has its own connection to the anchor, one port above `port`, so an image of many
+megabytes never delays the heartbeat on the input link.
+
+macOS 27.0 lets Baton read the pasteboard without asking. If a later version asks, it asks once,
+on the Mac where something was just copied; set Baton to always allow under Privacy & Security →
+Paste from Other Apps on each Mac. Until then that Mac still receives the others' copies, and
+its menu says that copies made there are not shared.
 
 ## Build and install
 
@@ -161,6 +192,7 @@ System Settings → Privacy & Security:
   (`displays mini off <name>`) the anchor switches another Mac's.
 - `Baton display-check` prints what display control sees on a Mac. It works without the agent
   and changes nothing.
+- `Baton ctl clipboard` shows what the shared clipboard last did; `clipboard on|off` switches it.
 - `Baton ctl sim move <dx> <dy>` (also `enter`, `click`, `key`, `scroll`) feeds synthetic input
   through the anchor, for testing without touching the mouse. On a client, `sim local` stands in
   for a touch of its trackpad and `sim sleep` goes through what it does before sleeping.
