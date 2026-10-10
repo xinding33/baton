@@ -127,6 +127,8 @@ final class KeyboardMover: NSObject, IOBluetoothDevicePairDelegate, CBCentralMan
 
     private var permissionRequest: CBCentralManager?
     private var snapshot: [String: Any] = [:]
+    /// True while steps are running. Read and written on the main thread.
+    private(set) var isBusy = false
 
     /// Shows the system's Bluetooth permission prompt if it has not been answered yet.
     func requestPermission() {
@@ -160,6 +162,7 @@ final class KeyboardMover: NSObject, IOBluetoothDevicePairDelegate, CBCentralMan
             requestPermission()
             return completion(false, "Bluetooth permission is \(SharedKeyboard.bluetoothPermission) on this Mac")
         }
+        isBusy = true
         BluetoothThread.shared.async {
             var notes: [String] = []
             var ok = true
@@ -178,13 +181,17 @@ final class KeyboardMover: NSObject, IOBluetoothDevicePairDelegate, CBCentralMan
                 }
             }
             let detail = notes.joined(separator: "; ")
-            DispatchQueue.main.async { completion(ok, detail) }
+            DispatchQueue.main.async {
+                self.isBusy = false
+                completion(ok, detail)
+            }
         }
     }
 
     /// Whether this Mac holds a pairing with the keyboard, or nil if that cannot be told.
     func isPaired(address: String, completion: @escaping (Bool?) -> Void) {
-        guard CBManager.authorization == .allowedAlways else { return completion(nil) }
+        // Not while a handoff is running: it would be answered in the middle of a pairing attempt.
+        guard CBManager.authorization == .allowedAlways, !isBusy else { return completion(nil) }
         BluetoothThread.shared.async {
             let paired = IOBluetoothDevice(addressString: address)?.isPaired()
             DispatchQueue.main.async { completion(paired) }
@@ -228,18 +235,27 @@ final class KeyboardMover: NSObject, IOBluetoothDevicePairDelegate, CBCentralMan
             // Just after its old host forgets it, the keyboard refuses for a few seconds. Keep asking.
             // A pairing that works takes about a second, so an attempt that hasn't finished in three
             // is abandoned and started again rather than waited out.
+            // An abandoned attempt can still go through a moment later. Once the keyboard is
+            // attached it is paired, and starting another attempt would break that connection.
             let deadline = Date().addingTimeInterval(18)
             var attempts: [String] = []
             while Date() < deadline {
                 let started = Net.monotonicMillis()
+                if SharedKeyboard.isAttached(address: address) {
+                    attempts.append("attached after all")
+                    return (true, attempts.joined(separator: ", "))
+                }
                 guard let pair = IOBluetoothDevicePair(device: device) else { break }
                 pairingResult = nil
                 pair.delegate = self
                 let result = pair.start()
                 var outcome = "failed to start \(code(result))"
                 if result == kIOReturnSuccess {
-                    if wait(3, until: { pairingResult != nil }), let finished = pairingResult {
+                    let settled = wait(3, until: { pairingResult != nil || SharedKeyboard.isAttached(address: address) })
+                    if let finished = pairingResult {
                         outcome = finished == kIOReturnSuccess ? "ok" : "failed \(code(finished))"
+                    } else if settled {
+                        outcome = "ok"
                     } else {
                         pair.stop()
                         outcome = "abandoned"
@@ -247,7 +263,7 @@ final class KeyboardMover: NSObject, IOBluetoothDevicePairDelegate, CBCentralMan
                 }
                 attempts.append("\(outcome) in \(Net.monotonicMillis() - started) ms")
                 if outcome == "ok" { return (true, attempts.joined(separator: ", ")) }
-                _ = wait(0.3) { false }
+                _ = wait(0.5) { SharedKeyboard.isAttached(address: address) }
             }
             return (false, attempts.isEmpty ? "could not start" : attempts.joined(separator: ", "))
 
