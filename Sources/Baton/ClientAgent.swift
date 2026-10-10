@@ -285,6 +285,12 @@ final class ClientAgent {
         }
     }
 
+    /// Runs single Bluetooth steps on this Mac; the outcome goes to the log.
+    func bluetoothSteps(_ words: [String]) -> String {
+        guard let address = presence.address else { return "the anchor has not named a keyboard" }
+        return runBluetoothSteps(words, address: address, mover: mover)
+    }
+
     func status() -> String {
         let position = cursorLocation()
         let report: [String: Any] = [

@@ -77,6 +77,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return anchor?.simulate(Array(words.dropFirst())) ?? "only the anchor simulates input"
         case "arrange":
             return arrange(Array(words.dropFirst()))
+        case "bt":
+            let steps = Array(words.dropFirst())
+            return anchor?.bluetoothSteps(steps) ?? client?.bluetoothSteps(steps) ?? ""
         case "keyboard":
             return anchor?.keyboardCommand(Array(words.dropFirst())) ?? "only the anchor moves the keyboard"
         default:

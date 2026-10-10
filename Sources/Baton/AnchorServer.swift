@@ -155,7 +155,7 @@ final class AnchorServer {
         let id = nextCommandId
         commands[id] = (name, completion)
         peer.link.send(.keyboardCommand(KeyboardCommand(id: id, action: action, address: address, strategy: strategy)))
-        DispatchQueue.main.asyncAfter(deadline: .now() + 25) { [weak self] in
+        DispatchQueue.main.asyncAfter(deadline: .now() + 45) { [weak self] in
             self?.commands.removeValue(forKey: id)?.completion(false, "\(name) did not answer")
         }
     }

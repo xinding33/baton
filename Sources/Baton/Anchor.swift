@@ -451,6 +451,12 @@ final class Anchor {
         onStateChanged?()
     }
 
+    /// Runs single Bluetooth steps on this Mac; the outcome goes to the log.
+    func bluetoothSteps(_ words: [String]) -> String {
+        guard let address = config.keyboardAddress else { return "no keyboardAddress in the config" }
+        return runBluetoothSteps(words, address: address, mover: mover)
+    }
+
     func keyboardCommand(_ words: [String]) -> String {
         switch words.first {
         case "move":

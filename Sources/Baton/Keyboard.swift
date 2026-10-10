@@ -96,11 +96,6 @@ private final class BluetoothThread: Thread {
 final class KeyboardMover: NSObject, IOBluetoothDevicePairDelegate, CBCentralManagerDelegate {
     typealias Completion = (Bool, String) -> Void
 
-    // Touched only on the Bluetooth thread.
-    private var pending: Completion?
-    private var pair: IOBluetoothDevicePair?
-    private var deadline: Timer?
-    // Touched only on the main thread.
     private var permissionRequest: CBCentralManager?
     private var snapshot: [String: Any] = [:]
 
@@ -112,84 +107,123 @@ final class KeyboardMover: NSObject, IOBluetoothDevicePairDelegate, CBCentralMan
 
     func centralManagerDidUpdateState(_ central: CBCentralManager) {}
 
+    /// The single steps a handoff is made of, also usable one at a time for diagnosis.
+    enum Step: String {
+        case disconnect, forget, connect, pair
+    }
+
     /// Runs `command`, reporting the outcome on the main thread.
     func perform(_ command: KeyboardCommand, completion: @escaping Completion) {
+        let steps: [Step]
+        switch (command.action, command.strategy) {
+        case (.release, .reconnect): steps = [.disconnect]
+        case (.release, .repair): steps = [.forget]
+        case (.take, .reconnect): steps = [.connect]
+        // A pairing record left from an earlier turn is stale once another Mac has paired.
+        case (.take, .repair): steps = [.forget, .pair, .connect]
+        }
+        run(steps, address: command.address, completion: completion)
+    }
+
+    /// Runs `steps` in order on the Bluetooth thread, stopping at the first that fails.
+    func run(_ steps: [Step], address: String, completion: @escaping Completion) {
         guard CBManager.authorization == .allowedAlways else {
             requestPermission()
             return completion(false, "Bluetooth permission is \(SharedKeyboard.bluetoothPermission) on this Mac")
         }
-        let reply: Completion = { ok, detail in DispatchQueue.main.async { completion(ok, detail) } }
         BluetoothThread.shared.async {
-            guard let device = IOBluetoothDevice(addressString: command.address) else {
-                return reply(false, "bad address \(command.address)")
+            var notes: [String] = []
+            var ok = true
+            for step in steps {
+                guard let device = IOBluetoothDevice(addressString: address) else {
+                    ok = false
+                    notes.append("bad address \(address)")
+                    break
+                }
+                let started = Net.monotonicMillis()
+                let (succeeded, note) = self.execute(step, device)
+                notes.append("\(step.rawValue): \(note) (\(Net.monotonicMillis() - started) ms)")
+                if !succeeded {
+                    ok = false
+                    break
+                }
             }
-            switch (command.action, command.strategy) {
-            case (.release, .reconnect): self.disconnect(device, reply)
-            case (.release, .repair): self.forget(device, reply)
-            case (.take, .reconnect): self.connect(device, reply)
-            case (.take, .repair): self.pairAndConnect(device, reply)
+            let detail = notes.joined(separator: "; ")
+            DispatchQueue.main.async { completion(ok, detail) }
+        }
+    }
+
+    private func code(_ result: IOReturn) -> String {
+        "0x" + String(UInt32(bitPattern: result), radix: 16)
+    }
+
+    /// Polls until `condition` holds, for at most `seconds`. Runs on the Bluetooth thread.
+    private func wait(_ seconds: TimeInterval, until condition: () -> Bool) -> Bool {
+        let deadline = Date().addingTimeInterval(seconds)
+        while Date() < deadline {
+            if condition() { return true }
+            RunLoop.current.run(mode: .default, before: Date().addingTimeInterval(0.05))
+        }
+        return condition()
+    }
+
+    private func execute(_ step: Step, _ device: IOBluetoothDevice) -> (Bool, String) {
+        let address = device.addressString ?? ""
+        switch step {
+        case .disconnect:
+            guard device.isConnected() else { return (true, "was not connected") }
+            let result = device.closeConnection()
+            guard result == kIOReturnSuccess else { return (false, "failed \(code(result))") }
+            // The call returns before the link is down; the next Mac must not start until it is.
+            let gone = wait(4) { !device.isConnected() && !SharedKeyboard.isAttached(address: address) }
+            return (gone, gone ? "done" : "still attached after 4 s")
+
+        case .forget:
+            guard device.isPaired() else { return (true, "was not paired") }
+            let remove = Selector(("remove"))
+            guard device.responds(to: remove) else { return (false, "this macOS cannot unpair devices programmatically") }
+            device.perform(remove)
+            let gone = wait(4) { !SharedKeyboard.isAttached(address: address) }
+            return (gone, gone ? "done" : "still attached after 4 s")
+
+        case .pair:
+            // Just after its old host forgets it, the keyboard refuses for a few seconds. Keep asking.
+            let deadline = Date().addingTimeInterval(15)
+            var attempts = 0
+            var last = "could not start"
+            while Date() < deadline {
+                attempts += 1
+                guard let pair = IOBluetoothDevicePair(device: device) else { break }
+                pairingResult = nil
+                pair.delegate = self
+                let result = pair.start()
+                if result != kIOReturnSuccess {
+                    last = "failed to start \(code(result))"
+                } else if wait(10, until: { pairingResult != nil }), let outcome = pairingResult {
+                    if outcome == kIOReturnSuccess { return (true, "done on attempt \(attempts)") }
+                    last = "failed \(code(outcome))"
+                } else {
+                    pair.stop()
+                    last = "timed out"
+                }
+                _ = wait(0.5) { false }
             }
+            return (false, "\(last) after \(attempts) attempt(s)")
+
+        case .connect:
+            if !device.isConnected() {
+                // Page for 5 s (the unit is 0.625 ms) rather than the much longer default.
+                let result = device.openConnection(nil, withPageTimeout: 8000, authenticationRequired: false)
+                guard result == kIOReturnSuccess else { return (false, "failed \(code(result))") }
+            }
+            // A Bluetooth link is not enough; the keyboard is here once its keys can arrive.
+            let attached = wait(6) { SharedKeyboard.isAttached(address: address) }
+            return (attached, attached ? "attached" : "connected over Bluetooth but never appeared as a keyboard")
         }
     }
 
-    private func finish(_ ok: Bool, _ detail: String) {
-        deadline?.invalidate()
-        deadline = nil
-        pair = nil
-        let completion = pending
-        pending = nil
-        completion?(ok, detail)
-    }
-
-    private func begin(_ completion: @escaping Completion, timeout: TimeInterval) -> Bool {
-        guard pending == nil else {
-            completion(false, "another keyboard operation is in progress")
-            return false
-        }
-        pending = completion
-        deadline = Timer.scheduledTimer(withTimeInterval: timeout, repeats: false) { [weak self] _ in
-            self?.finish(false, "timed out")
-        }
-        return true
-    }
-
-    private func disconnect(_ device: IOBluetoothDevice, _ completion: @escaping Completion) {
-        guard device.isConnected() else { return completion(true, "already disconnected") }
-        let result = device.closeConnection()
-        completion(result == kIOReturnSuccess, result == kIOReturnSuccess ? "disconnected" : "disconnect failed (\(String(result, radix: 16)))")
-    }
-
-    /// Removes the pairing, after which the keyboard accepts a new host.
-    private func forget(_ device: IOBluetoothDevice, _ completion: @escaping Completion) {
-        let remove = Selector(("remove"))
-        guard device.responds(to: remove) else { return completion(false, "this macOS cannot unpair devices programmatically") }
-        device.perform(remove)
-        completion(true, "unpaired")
-    }
-
-    private func connect(_ device: IOBluetoothDevice, _ completion: @escaping Completion) {
-        if device.isConnected() { return waitUntilAttached(device, completion) }
-        guard begin(completion, timeout: 12) else { return }
-        let result = device.openConnection(self)
-        if result != kIOReturnSuccess { finish(false, "connect failed to start (\(String(result, radix: 16)))") }
-    }
-
-    @objc func connectionComplete(_ device: IOBluetoothDevice!, status: IOReturn) {
-        guard let completion = pending else { return }
-        guard status == kIOReturnSuccess else { return finish(false, "connect failed (\(String(status, radix: 16)))") }
-        deadline?.invalidate()
-        pending = nil
-        waitUntilAttached(device, completion)
-    }
-
-    private func pairAndConnect(_ device: IOBluetoothDevice, _ completion: @escaping Completion) {
-        if device.isPaired() { return connect(device, completion) }
-        guard begin(completion, timeout: 20), let pair = IOBluetoothDevicePair(device: device) else { return }
-        pair.delegate = self
-        self.pair = pair
-        let result = pair.start()
-        if result != kIOReturnSuccess { finish(false, "pairing failed to start (\(String(result, radix: 16)))") }
-    }
+    // Pairing callbacks, delivered on the Bluetooth thread's run loop.
+    private var pairingResult: IOReturn?
 
     func devicePairingPINCodeRequest(_ sender: Any!) {
         var pin = BluetoothPINCode()
@@ -202,27 +236,7 @@ final class KeyboardMover: NSObject, IOBluetoothDevicePairDelegate, CBCentralMan
     }
 
     func devicePairingFinished(_ sender: Any!, error: IOReturn) {
-        guard let completion = pending, let device = (sender as? IOBluetoothDevicePair)?.device() else { return }
-        guard error == kIOReturnSuccess else { return finish(false, "pairing failed (\(String(error, radix: 16)))") }
-        deadline?.invalidate()
-        pending = nil
-        pair = nil
-        connect(device, completion)
-    }
-
-    /// A Bluetooth link is not enough; the keyboard counts as here once its keys can arrive.
-    private func waitUntilAttached(_ device: IOBluetoothDevice, _ completion: @escaping Completion) {
-        let address = device.addressString ?? ""
-        let started = Net.monotonicMillis()
-        Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { timer in
-            if SharedKeyboard.isAttached(address: address) {
-                timer.invalidate()
-                completion(true, "attached")
-            } else if Net.monotonicMillis() - started > 6000 {
-                timer.invalidate()
-                completion(false, "connected over Bluetooth but never appeared as a keyboard")
-            }
-        }
+        pairingResult = error
     }
 
     /// What this Mac knows about the keyboard. The Bluetooth details are read in the background,
@@ -290,4 +304,13 @@ final class KeyCapture {
         let wanted: CGEventFlags = [.maskControl, .maskAlternate, .maskCommand]
         return down && code == 53 && CGEventFlags(rawValue: flags).isSuperset(of: wanted)
     }
+}
+
+func runBluetoothSteps(_ words: [String], address: String, mover: KeyboardMover) -> String {
+    let steps = words.compactMap(KeyboardMover.Step.init(rawValue:))
+    guard !steps.isEmpty, steps.count == words.count else { return "usage: bt disconnect|forget|pair|connect ..." }
+    mover.run(steps, address: address) { ok, detail in
+        log("bt \(words.joined(separator: " ")): \(ok ? "ok" : "FAILED") - \(detail)")
+    }
+    return "started; see the log"
 }
