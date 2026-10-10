@@ -13,9 +13,13 @@ final class SharedClipboard: NSObject {
     var onStateChanged: (() -> Void)?
     /// Anchor only: sharing was switched on or off and the setting should be saved.
     var onSettingChanged: ((Bool) -> Void)?
+    /// Opens a pane of System Settings.
+    var openSettings: (URL) -> Void = { NSWorkspace.shared.open($0) }
 
-    /// - Parameter pasteboard: the general pasteboard unless a test hands in its own.
-    init(config: Config, secret: Data, pasteboard: NSPasteboard = .general) {
+    /// - Parameters:
+    ///   - pasteboard: the general pasteboard unless a test hands in its own.
+    ///   - universalClipboard: whether this Mac's settings leave Universal Clipboard on.
+    init(config: Config, secret: Data, pasteboard: NSPasteboard = .general, universalClipboard: @escaping () -> Bool = { UniversalClipboard.isOn() }) {
         self.config = config
         self.secret = secret
         service = ClipboardService(
@@ -24,6 +28,7 @@ final class SharedClipboard: NSObject {
             board: SystemClipboard(pasteboard),
             enabled: config.shareClipboard,
             maxBytes: config.clipboardMaxMB * 1024 * 1024,
+            universalClipboard: universalClipboard,
             log: { log("clipboard: \($0)") }
         )
     }
@@ -42,6 +47,12 @@ final class SharedClipboard: NSObject {
     func start() {
         service.onStatusChanged = { [weak self] in DispatchQueue.main.async { self?.onStateChanged?() } }
         service.onEnabledChanged = { [weak self] value in DispatchQueue.main.async { self?.onSettingChanged?(value) } }
+        service.onShowHandoffSetting = { [weak self] in
+            DispatchQueue.main.async {
+                log("clipboard: showing the Handoff setting")
+                self?.openSettings(UniversalClipboard.settingsURL)
+            }
+        }
         if config.role == .anchor { service.listen(on: port, using: parameters) }
     }
 
@@ -60,12 +71,33 @@ final class SharedClipboard: NSObject {
         let share = NSMenuItem(title: "Share clipboard", action: reachable ? #selector(toggle) : nil, keyEquivalent: "")
         share.target = self
         share.state = status.enabled ? .on : .off
-        guard status.enabled, status.access == .asks || status.access == .denied else { return [share] }
-        return [share, NSMenuItem(title: "Copies made here are not shared: allow Baton in Privacy & Security › Paste from Other Apps", action: nil, keyEquivalent: "")]
+        var items = [share]
+        if status.enabled, status.access == .asks || status.access == .denied {
+            items.append(NSMenuItem(title: "Copies made here are not shared: allow Baton in Privacy & Security › Paste from Other Apps", action: nil, keyEquivalent: ""))
+        }
+        // The anchor lists every Mac that should turn Handoff off; a client speaks for itself.
+        let machines = status.enabled ? status.turnOffHandoffOn.filter { config.role == .anchor || $0 == config.name } : []
+        if !machines.isEmpty {
+            items.append(NSMenuItem(title: "Universal Clipboard is also on and gets in the way:", action: nil, keyEquivalent: ""))
+        }
+        for machine in machines {
+            let item = NSMenuItem(title: "Turn off Handoff on \(machine == config.name ? "this Mac" : machine)…", action: #selector(showHandoffSetting(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = machine
+            item.toolTip = "macOS also sends every copy to \(machine == config.name ? "this Mac" : machine), more slowly, and can replace the one Baton delivered. "
+                + "This opens System Settings › General › \(UniversalClipboard.settingsPaneName) there: switch off “Allow Handoff between this Mac and your iCloud devices”."
+            items.append(item)
+        }
+        return items
     }
 
     @objc private func toggle() {
         service.setEnabled(!service.status.enabled)
+    }
+
+    @objc private func showHandoffSetting(_ sender: NSMenuItem) {
+        guard let machine = sender.representedObject as? String else { return }
+        service.showHandoffSetting(on: machine)
     }
 
     func command(_ words: [String]) -> String {
@@ -81,6 +113,9 @@ final class SharedClipboard: NSObject {
                 "maxBytes": status.maxBytes,
                 "shared": status.shared,
                 "lastEvent": status.lastEvent,
+                "universalClipboardHere": status.universalClipboard,
+                "turnOffHandoffOn": status.turnOffHandoffOn,
+                "handoffClipboardSeen": status.handoffClipboardSeen.map { "\(Int(-$0.timeIntervalSinceNow)) s ago" } ?? "never",
             ]
             if config.role == .anchor {
                 report["port"] = status.port.map { Int($0) } ?? 0

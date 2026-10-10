@@ -71,6 +71,12 @@ public enum ClipboardFrame: Equatable, Sendable {
     case end(transfer: UInt32)
     /// The sender gave this transfer up for a newer copy.
     case cancel(transfer: UInt32)
+    /// Client to anchor: whether Universal Clipboard is on on the client.
+    case universalClipboard(Bool)
+    /// Anchor to client: the Macs on which Handoff should be turned off.
+    case turnOffHandoff([String])
+    /// Anchor to client: someone asked, in the anchor's menu, to see the client's Handoff setting.
+    case showHandoffSetting
 
     private var kind: UInt8 {
         switch self {
@@ -81,6 +87,9 @@ public enum ClipboardFrame: Equatable, Sendable {
         case .chunk: return 5
         case .end: return 6
         case .cancel: return 7
+        case .universalClipboard: return 8
+        case .turnOffHandoff: return 9
+        case .showHandoffSetting: return 10
         }
     }
 
@@ -91,7 +100,9 @@ public enum ClipboardFrame: Equatable, Sendable {
         switch self {
         case let .hello(hello): payload = (try? JSONEncoder().encode(hello)) ?? Data()
         case let .settings(settings): payload = (try? JSONEncoder().encode(settings)) ?? Data()
-        case let .setEnabled(enabled): payload = Data([enabled ? 1 : 0])
+        case let .setEnabled(enabled), let .universalClipboard(enabled): payload = Data([enabled ? 1 : 0])
+        case let .turnOffHandoff(machines): payload = (try? JSONEncoder().encode(machines)) ?? Data()
+        case .showHandoffSetting: break
         case let .begin(header): payload = (try? JSONEncoder().encode(header)) ?? Data()
         case let .chunk(transfer, data):
             transferId = transfer
@@ -118,16 +129,21 @@ public enum ClipboardFrame: Equatable, Sendable {
             guard let value = try? JSONDecoder().decode(type, from: payload) else { throw ClipboardWireError.badFrame }
             return value
         }
+        func flag() throws -> Bool {
+            guard payload.count == 1 else { throw ClipboardWireError.badFrame }
+            return payload[0] != 0
+        }
         switch kind {
         case 1: self = .hello(try json(ClipboardHello.self))
         case 2: self = .settings(try json(ClipboardSettings.self))
-        case 3:
-            guard payload.count == 1 else { throw ClipboardWireError.badFrame }
-            self = .setEnabled(payload[0] != 0)
+        case 3: self = .setEnabled(try flag())
         case 4: self = .begin(try json(ClipboardHeader.self))
         case 5: self = .chunk(transfer: try transfer(), Data(payload.dropFirst(4)))
         case 6: self = .end(transfer: try transfer())
         case 7: self = .cancel(transfer: try transfer())
+        case 8: self = .universalClipboard(try flag())
+        case 9: self = .turnOffHandoff(try json([String].self))
+        case 10: self = .showHandoffSetting
         default: throw ClipboardWireError.badFrame
         }
     }

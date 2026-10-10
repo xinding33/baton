@@ -159,3 +159,39 @@ final class ClipboardRegisterTests: XCTestCase {
         XCTAssertEqual(content.summary, "public.utf8-plain-text 16 B")
     }
 }
+
+final class UniversalClipboardTests: XCTestCase {
+    func testItIsOnUnlessTheSettingsSayOtherwise() {
+        XCTAssertTrue(UniversalClipboard.isOn { _ in nil })
+        XCTAssertFalse(UniversalClipboard.isOn { ["ActivityAdvertisingAllowed": false, "ActivityReceivingAllowed": false][$0] })
+        XCTAssertTrue(UniversalClipboard.isOn { ["ActivityAdvertisingAllowed": true, "ActivityReceivingAllowed": true][$0] })
+        // Half off still shares in one direction.
+        XCTAssertTrue(UniversalClipboard.isOn { ["ActivityAdvertisingAllowed": false][$0] })
+        XCTAssertTrue(UniversalClipboard.isOn { ["ActivityAdvertisingAllowed": false, "ActivityReceivingAllowed": true][$0] })
+        // The hidden setting turns the clipboard off and leaves the rest of Handoff alone.
+        XCTAssertFalse(UniversalClipboard.isOn { ["ClipboardSharingEnabled": false][$0] })
+        XCTAssertTrue(UniversalClipboard.isOn { ["ClipboardSharingEnabled": true][$0] })
+    }
+
+    func testOneMacMayKeepItAndFromTwoUpTheClientsGiveItUp() {
+        XCTAssertEqual(UniversalClipboard.turnOff(anchorOn: true, clientsOn: []), [])
+        XCTAssertEqual(UniversalClipboard.turnOff(anchorOn: false, clientsOn: ["mini"]), [])
+        XCTAssertEqual(UniversalClipboard.turnOff(anchorOn: false, clientsOn: []), [])
+        XCTAssertEqual(UniversalClipboard.turnOff(anchorOn: true, clientsOn: ["mini"]), ["mini"])
+        XCTAssertEqual(UniversalClipboard.turnOff(anchorOn: true, clientsOn: ["mini", "mbp"]), ["mbp", "mini"])
+        XCTAssertEqual(UniversalClipboard.turnOff(anchorOn: false, clientsOn: ["mini", "mbp"]), ["mbp", "mini"])
+    }
+
+    func testWithNothingSetTheSystemSettingReadsAsAbsent() {
+        // A domain nobody has written to, so nothing is created by asking.
+        XCTAssertNil(UniversalClipboard.systemSetting("ActivityAdvertisingAllowed", domain: "com.xinding.baton.never-written"))
+    }
+
+    func testThePaneAndItsNameComeFromThisMacOS() {
+        XCTAssertEqual(UniversalClipboard.settingsURL.scheme, "x-apple.systempreferences")
+        XCTAssertTrue(UniversalClipboard.settingsPaneName.hasPrefix("AirDrop"))
+        // The pane the link names is installed on this Mac under that identifier.
+        let installed = Bundle(path: UniversalClipboard.settingsBundle)?.bundleIdentifier
+        XCTAssertEqual(installed.map { "x-apple.systempreferences:\($0)" }, UniversalClipboard.settingsURL.absoluteString)
+    }
+}

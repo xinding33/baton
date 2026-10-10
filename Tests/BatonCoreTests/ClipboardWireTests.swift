@@ -33,6 +33,10 @@ final class ClipboardWireTests: XCTestCase {
             .chunk(transfer: 9, Data()),
             .end(transfer: 9),
             .cancel(transfer: 0xFFFF_FFFF),
+            .universalClipboard(true),
+            .turnOffHandoff(["mbp", "mini"]),
+            .turnOffHandoff([]),
+            .showHandoffSetting,
         ]
         var parser = ClipboardFrameParser()
         for frame in all { parser.append(frame.encoded()) }
