@@ -24,6 +24,7 @@ final class ClientAgent {
     private var timer: DispatchSourceTimer?
     private var useCachedNext = false
     private var lastFailure = ""
+    private var idleCursorWatch: DispatchSourceTimer?
 
     var onStateChanged: (() -> Void)?
 
@@ -132,6 +133,7 @@ final class ClientAgent {
             active = false
             injector.releaseAll()
         }
+        showCursor()
         onStateChanged?()
         DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in self?.connect() }
     }
@@ -144,6 +146,28 @@ final class ClientAgent {
             datagrams.send(content: codec.seal(DatagramPayload.hello.encoded()), completion: .idempotent)
             self.codec = codec
         }
+    }
+
+    // MARK: Cursor visibility
+
+    /// Hides this Mac's cursor while the shared cursor is on another machine. It comes back as
+    /// soon as it moves, which means someone used this Mac's own trackpad or mouse.
+    private func hideIdleCursor() {
+        CursorVisibility.hide()
+        idleCursorWatch?.cancel()
+        // The resting position is sampled on the first tick, once the last replayed move has landed.
+        var resting: CGPoint?
+        idleCursorWatch = repeatingTimer(every: 0.1) { [weak self] in
+            let now = cursorLocation()
+            guard let rest = resting else { return resting = now }
+            if abs(now.x - rest.x) > 1 || abs(now.y - rest.y) > 1 { self?.showCursor() }
+        }
+    }
+
+    private func showCursor() {
+        idleCursorWatch?.cancel()
+        idleCursorWatch = nil
+        CursorVisibility.show()
     }
 
     // MARK: Messages from the anchor
@@ -163,18 +187,21 @@ final class ClientAgent {
                 if config.anchorHost == nil { rememberAnchor(host) }
                 openDatagrams(to: host, welcome)
             }
+            hideIdleCursor()
             onStateChanged?()
         case let .ping(sentAt):
             link.send(.pong(sentAt))
         case let .enter(motion):
             active = true
             lastMotionSeq = motion.seq
+            showCursor()
             injector.wake()
             injector.move(to: motion)
             onStateChanged?()
         case .leave:
             active = false
             injector.releaseAll()
+            hideIdleCursor()
             onStateChanged?()
         case let .move(motion):
             apply(motion)
@@ -233,6 +260,7 @@ final class ClientAgent {
             "accessibility": AXIsProcessTrusted(),
             "postEvents": CGPreflightPostEventAccess(),
             "injected": injector.injected,
+            "cursorHidden": CursorVisibility.isHidden,
             "datagramsReceived": datagramsReceived,
             "discovered": discovered.map { "\($0)" } ?? "none",
             "displays": currentDisplays().map { "\($0.name) \(Int($0.frame.width))x\(Int($0.frame.height)) at (\(Int($0.frame.minX)),\(Int($0.frame.minY)))" },

@@ -54,6 +54,7 @@ final class EventTap {
 /// Hides the cursor even though this app is never frontmost, which the public API alone won't do.
 enum CursorVisibility {
     private static var hidden = false
+    static var isHidden: Bool { hidden }
     private static let allowBackgroundControl: Void = {
         typealias DefaultConnection = @convention(c) () -> Int32
         typealias SetProperty = @convention(c) (Int32, Int32, CFString, CFTypeRef) -> Int32
