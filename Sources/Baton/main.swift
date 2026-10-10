@@ -9,6 +9,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem?
     private var activity: NSObjectProtocol?
     private var terminationSource: DispatchSourceSignal?
+    private var arrangementWindow: ArrangementWindowController?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         let config: Config
@@ -36,6 +37,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 exit(1)
             }
             self.anchor = anchor
+            arrangementWindow = ArrangementWindowController(anchor: anchor)
         case .client:
             let client = ClientAgent(config: config, secret: secret)
             client.onStateChanged = { [weak self] in self?.refreshMenu() }
@@ -73,12 +75,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return anchor?.status() ?? "only the anchor can pause"
         case "sim":
             return anchor?.simulate(Array(words.dropFirst())) ?? "only the anchor simulates input"
+        case "arrange":
+            return arrange(Array(words.dropFirst()))
         default:
-            return "commands: status, home, pause, resume, sim"
+            return "commands: status, home, pause, resume, sim, arrange"
         }
     }
 
+    /// `arrange show` opens the editor; `snapshot` and `drop` exercise it without the mouse.
+    private func arrange(_ words: [String]) -> String {
+        guard let anchor, let arrangementWindow else { return "only the anchor arranges machines" }
+        switch words.first {
+        case "show":
+            arrangementWindow.show()
+        case "snapshot":
+            guard words.count == 2 else { return "usage: arrange snapshot <png path>" }
+            let view = arrangementWindow.makeView(frame: NSRect(x: 0, y: 0, width: 720, height: 408))
+            return view.writeSnapshot(to: URL(fileURLWithPath: words[1])) ? "wrote \(words[1])" : "could not write \(words[1])"
+        case "drop":
+            guard words.count == 4, let x = Double(words[2]), let y = Double(words[3]) else { return "usage: arrange drop <machine> <x> <y>" }
+            var arrangement = anchor.arrangement()
+            arrangement.drop(words[1], at: CGPoint(x: x, y: y), snap: 80)
+            anchor.apply(arrangement)
+        default:
+            return "usage: arrange show | snapshot <png path> | drop <machine> <x> <y>"
+        }
+        return anchor.status()
+    }
+
     private func refreshMenu() {
+        arrangementWindow?.refresh()
         guard let statusItem else { return }
         let menu = NSMenu()
         var title = "⇄"
@@ -89,6 +115,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             menu.addItem(withTitle: peers.isEmpty ? "No other Macs connected" : "Connected: \(peers.joined(separator: ", "))", action: nil, keyEquivalent: "")
             menu.addItem(withTitle: "Bring cursor home (⌃⌥⌘⎋)", action: #selector(home), keyEquivalent: "").target = self
             menu.addItem(withTitle: anchor.paused ? "Resume sharing" : "Pause sharing", action: #selector(togglePause), keyEquivalent: "").target = self
+            menu.addItem(withTitle: "Arrange Macs…", action: #selector(showArrangement), keyEquivalent: "").target = self
         } else if let client {
             title = client.isConnected ? (client.active ? "⇄ ●" : "⇄") : "⇄ ?"
             menu.addItem(withTitle: client.isConnected ? "Connected to the anchor" : "Looking for the anchor…", action: nil, keyEquivalent: "")
@@ -100,6 +127,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func home() { anchor?.goLocal(at: nil) }
+    @objc private func showArrangement() { arrangementWindow?.show() }
     @objc private func togglePause() { anchor.map { $0.setPaused(!$0.paused) } }
     @objc private func quit() {
         anchor?.goLocal(at: nil)

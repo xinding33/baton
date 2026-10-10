@@ -145,6 +145,15 @@ public struct Layout: Equatable, Sendable {
         return PlacedMachine(name: p.machine, displays: rects, scale: p.scale, origin: origin)
     }
 
+    /// The same layout with only `names` in it. Machines that are away still hold their place,
+    /// so others placed against them stay put; they just can't be crossed into.
+    public func keeping(_ names: Set<String>) -> Layout {
+        var copy = self
+        copy.machines = machines.filter { names.contains($0.key) }
+        copy.unplaced = unplaced.filter { names.contains($0) }
+        return copy
+    }
+
     /// Half-open containment, so adjacent displays never both contain a point.
     static func contains(_ r: CGRect, _ p: CGPoint) -> Bool {
         p.x >= r.minX && p.x < r.maxX && p.y >= r.minY && p.y < r.maxY

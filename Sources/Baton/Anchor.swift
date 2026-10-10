@@ -11,7 +11,7 @@ final class Anchor {
         case remote(String)
     }
 
-    private let config: Config
+    private var config: Config
     private let server: AnchorServer
     private var tap: EventTap!
     private var displayWatcher: DisplayWatcher?
@@ -21,6 +21,9 @@ final class Anchor {
     private(set) var layout = Layout()
     private(set) var paused = false
     private var displays = currentDisplays()
+    /// The last displays seen on every machine, so a Mac that is away keeps its place in the layout.
+    private var knownDisplays: [String: [DisplayInfo]] = [:]
+    private static var knownDisplaysFile: URL { Paths.support.appendingPathComponent("known-displays.json") }
     /// Cursor position on the focused remote machine, in its coordinates.
     private var remotePosition: CGPoint = .zero
     /// Where the local cursor waits, frozen, while the focus is remote.
@@ -55,6 +58,10 @@ final class Anchor {
         }
         try server.start()
         displays = currentDisplays()
+        if let data = try? Data(contentsOf: Anchor.knownDisplaysFile),
+           let known = try? JSONDecoder().decode([String: [DisplayInfo]].self, from: data) {
+            knownDisplays = known
+        }
         rebuildLayout()
         displayWatcher = DisplayWatcher { [weak self] in
             self?.displays = currentDisplays()
@@ -85,9 +92,17 @@ final class Anchor {
     // MARK: Layout
 
     private func rebuildLayout() {
-        var rects = [config.name: displays.map(\.frame)]
-        for peer in server.peers.values { rects[peer.name] = peer.displays.map(\.frame) }
-        layout = Layout.resolve(root: config.name, displays: rects, placements: config.placements)
+        var known = knownDisplays
+        known[config.name] = displays
+        for peer in server.peers.values { known[peer.name] = peer.displays }
+        if known != knownDisplays {
+            knownDisplays = known
+            if let data = try? JSONEncoder().encode(known) {
+                try? data.write(to: Anchor.knownDisplaysFile, options: .atomic)
+            }
+        }
+        layout = Layout.resolve(root: config.name, displays: known.mapValues { $0.map(\.frame) }, placements: config.placements)
+            .keeping(onlineMachines)
         if !layout.unplaced.isEmpty {
             log("no place in the layout for: \(layout.unplaced.joined(separator: ", "))")
         }
@@ -99,6 +114,32 @@ final class Anchor {
             }
         }
         onStateChanged?()
+    }
+
+    // MARK: Arrangement editing
+
+    var onlineMachines: Set<String> { Set(server.peers.keys).union([config.name]) }
+
+    var knownDisplayNames: [String: [String]] {
+        knownDisplays.mapValues { $0.map { "\($0.name) · \(Int($0.frame.width)) × \(Int($0.frame.height))" } }
+    }
+
+    func arrangement() -> Arrangement {
+        Arrangement(root: config.name, displays: knownDisplays.mapValues { $0.map(\.frame) }, placements: config.placements)
+    }
+
+    /// Adopts an edited arrangement and saves it to the config file.
+    func apply(_ arrangement: Arrangement) {
+        config.placements = arrangement.placements()
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        do {
+            try encoder.encode(config).write(to: Paths.config, options: .atomic)
+        } catch {
+            log("could not save the arrangement: \(error)")
+        }
+        log("arrangement changed: " + config.placements.map { "\($0.machine) \($0.side.rawValue) of \($0.of)" }.joined(separator: ", "))
+        rebuildLayout()
     }
 
     // MARK: Focus changes
