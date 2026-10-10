@@ -54,10 +54,10 @@ private func readLine(from fd: Int32) -> String {
 }
 
 /// The `ctl` subcommand: sends one command to the running agent and prints its reply.
-func controlClient(_ words: [String]) -> Int32 {
+func controlClient(_ words: [String], quiet: Bool = false) -> Int32 {
     let fd = socket(AF_UNIX, SOCK_STREAM, 0)
     guard fd >= 0, withSocketAddress(Paths.controlSocket.path, { connect(fd, $0, $1) }) == 0 else {
-        FileHandle.standardError.write(Data("Baton is not running (no control socket)\n".utf8))
+        if !quiet { FileHandle.standardError.write(Data("Baton is not running (no control socket)\n".utf8)) }
         return 1
     }
     let request = words.joined(separator: " ") + "\n"
@@ -66,7 +66,7 @@ func controlClient(_ words: [String]) -> Int32 {
     while true {
         let n = read(fd, &buffer, buffer.count)
         guard n > 0 else { break }
-        FileHandle.standardOutput.write(Data(buffer[0..<n]))
+        if !quiet { FileHandle.standardOutput.write(Data(buffer[0..<n])) }
     }
     close(fd)
     return 0

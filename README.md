@@ -66,8 +66,13 @@ by itself, so a Mac pairs with it afresh.
 With macOS "Natural scrolling" on, Baton reverses notched mouse wheels and leaves trackpads alone,
 so trackpads scroll naturally and wheels scroll the traditional way. It tells the two apart by
 event, not by device: trackpads and the Magic Mouse send continuous scroll events, wheels send
-discrete ones. A mouse that sends continuous events, such as a Logitech set to smooth scrolling in
-Logi Options+, is treated as a trackpad.
+discrete ones.
+
+Known limitation: a mouse that sends continuous events, such as a Logitech set to smooth scrolling
+in Logi Options+, is treated as a trackpad and not reversed. Backspin has the same limit. It does
+not bite while Logi Options+ is not running. A fix for the shared mouse would be a switch on the
+anchor that reverses every scroll made there, continuous or not, which is right as long as no
+trackpad or Magic Mouse is attached to the anchor. It is not built.
 
 Each Mac reverses the scrolls that land on it, whether they come from the shared mouse or from a
 mouse plugged into that Mac, and has its own **Reverse Mouse Wheel** switch in the menu bar item,
@@ -177,6 +182,8 @@ System Settings → Privacy & Security:
 - **⌃⌥⌘⎋** brings the cursor back to the anchor.
 - **⌃⌥⌘W** wakes every Mac's display.
 - The menu bar item (⇄) shows where the cursor is and can pause sharing.
+- **Hide Menu Bar Icon…** removes the item on that Mac while Baton keeps running. Open Baton again
+  (`open ~/Applications/Baton.app`), or run `Baton ctl icon show`, to bring it back.
 - `Baton ctl status` prints the agent's state; `Baton ctl home|pause|resume` control it.
 - `Baton ctl keyboard` shows where the keyboard is; `keyboard move <machine>` hands it over and
   `keyboard follow on|off` switches following.

@@ -76,6 +76,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         refreshMenu()
     }
 
+    /// Opening Baton while it is running shows the icon again.
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows: Bool) -> Bool {
+        MenuIcon.setHidden(false)
+        refreshMenu()
+        return false
+    }
+
     private func command(_ words: [String]) -> String {
         switch words.first {
         case "status", nil:
@@ -106,8 +113,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return WakeTogether.shared.command(Array(words.dropFirst()))
         case "clipboard":
             return clipboard?.command(Array(words.dropFirst())) ?? ""
+        case "icon":
+            guard words.count == 2, ["show", "hide"].contains(words[1]) else { return "usage: icon show|hide" }
+            MenuIcon.setHidden(words[1] == "hide")
+            refreshMenu()
+            return "the menu bar icon is \(MenuIcon.isHidden ? "hidden" : "shown")"
         default:
-            return "commands: status, home, pause, resume, sim, arrange, keyboard, scroll, displays, wake, clipboard"
+            return "commands: status, home, pause, resume, sim, arrange, keyboard, scroll, displays, wake, clipboard, icon"
         }
     }
 
@@ -169,9 +181,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(.separator())
         clipboard?.menuItems().forEach(menu.addItem)
         menu.addItem(.separator())
+        menu.addItem(withTitle: "Hide Menu Bar Icon…", action: #selector(hideIcon), keyEquivalent: "").target = self
         menu.addItem(withTitle: "Quit Baton", action: #selector(quit), keyEquivalent: "").target = self
         statusItem.button?.title = title
         statusItem.menu = menu
+        // Never hidden while it is the only sign that a permission is missing.
+        statusItem.isVisible = !MenuIcon.isHidden || !AXIsProcessTrusted()
     }
 
     @objc private func home() { anchor?.goLocal(at: nil) }
@@ -183,6 +198,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func toggleKeyboardFollows() { anchor.map { $0.setKeyboardFollows(!$0.keyboardFollows) } }
     @objc private func togglePause() { anchor.map { $0.setPaused(!$0.paused) } }
+    @objc private func hideIcon() {
+        guard MenuIcon.confirmHiding() else { return }
+        MenuIcon.setHidden(true)
+        refreshMenu()
+    }
     @objc private func quit() {
         anchor?.goLocal(at: nil)
         // Exit cleanly so launchd leaves the agent stopped. Displays that are off come back first.
@@ -200,6 +220,12 @@ if arguments.first == "display-watchdog" {
 }
 if arguments.first == "display-check" {
     exit(runDisplayCheck(Array(arguments.dropFirst())))
+}
+
+// Opened by hand while the agent is already running: that is how a hidden menu bar icon comes
+// back. A second copy must not start, or it would take the agent's port and control socket.
+if arguments.isEmpty, controlClient(["icon", "show"], quiet: true) == 0 {
+    exit(0)
 }
 
 let app = NSApplication.shared
