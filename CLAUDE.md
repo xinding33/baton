@@ -24,6 +24,7 @@ The installed Baton is the owner's working mouse and keyboard, all day.
 - **Any IOBluetooth call blocks until Bluetooth permission is decided.** Keep IOBluetooth on the `BluetoothThread` in `Sources/Baton/Keyboard.swift`, gated on `CBManager.authorization == .allowedAlways`.
 - **Injected events must carry `Injector.marker`** so Baton's own taps ignore them. Anything new that posts events goes through `Injector`.
 - **Timers that must keep firing use `repeatingTimer`** (`Net.swift`), not `Timer`: run-loop timers pause while a menu is open.
+- **The pasteboard is read and written only on `ClipboardService`'s queue.** A read can wait on the app that made the copy, or on a privacy alert. Clipboard data never goes on the input link either: it has its own connection (`port` + 1), so megabytes cannot hold up the heartbeat.
 - **A new permission prompt on a client can strand it**, since nobody may be at that Mac to answer. Say so in your summary if a change needs one.
 
 ## Conventions

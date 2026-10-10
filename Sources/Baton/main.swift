@@ -10,6 +10,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var activity: NSObjectProtocol?
     private var terminationSource: DispatchSourceSignal?
     private var arrangementWindow: ArrangementWindowController?
+    private var clipboard: SharedClipboard?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         let config: Config
@@ -26,6 +27,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Input has to flow without timer coalescing or App Nap.
         activity = ProcessInfo.processInfo.beginActivity(options: [.userInitiatedAllowingIdleSystemSleep, .latencyCritical], reason: "Sharing input")
 
+        let clipboard = SharedClipboard(config: config, secret: secret)
+        clipboard.onStateChanged = { [weak self] in self?.refreshMenu() }
+        self.clipboard = clipboard
+
         switch config.role {
         case .anchor:
             let anchor = Anchor(config: config, secret: secret)
@@ -38,12 +43,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
             self.anchor = anchor
             arrangementWindow = ArrangementWindowController(anchor: anchor)
+            clipboard.onSettingChanged = { [weak anchor] in anchor?.setShareClipboard($0) }
         case .client:
             let client = ClientAgent(config: config, secret: secret)
             client.onStateChanged = { [weak self] in self?.refreshMenu() }
+            client.onAnchorChanged = { [weak clipboard] in clipboard?.anchorChanged($0) }
             client.start()
             self.client = client
         }
+        clipboard.start()
 
         // Hand the mouse back before being stopped, e.g. by a redeploy.
         signal(SIGTERM, SIG_IGN)
@@ -82,8 +90,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return anchor?.bluetoothSteps(steps) ?? client?.bluetoothSteps(steps) ?? ""
         case "keyboard":
             return anchor?.keyboardCommand(Array(words.dropFirst())) ?? "only the anchor moves the keyboard"
+        case "clipboard":
+            return clipboard?.command(Array(words.dropFirst())) ?? ""
         default:
-            return "commands: status, home, pause, resume, sim, arrange, keyboard"
+            return "commands: status, home, pause, resume, sim, arrange, keyboard, clipboard"
         }
     }
 
@@ -139,6 +149,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             title = client.isConnected ? (client.active ? "⇄ ●" : "⇄") : "⇄ ?"
             menu.addItem(withTitle: client.isConnected ? "Connected to the anchor" : "Looking for the anchor…", action: nil, keyEquivalent: "")
         }
+        menu.addItem(.separator())
+        clipboard?.menuItems().forEach(menu.addItem)
         menu.addItem(.separator())
         menu.addItem(withTitle: "Quit Baton", action: #selector(quit), keyEquivalent: "").target = self
         statusItem.button?.title = title

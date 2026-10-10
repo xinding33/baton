@@ -31,6 +31,8 @@ final class ClientAgent {
     private let mover = KeyboardMover()
 
     var onStateChanged: (() -> Void)?
+    /// The anchor's address once it has welcomed this Mac, nil when the connection is gone.
+    var onAnchorChanged: ((NWEndpoint.Host?) -> Void)?
 
     init(config: Config, secret: Data) {
         self.config = config
@@ -162,6 +164,7 @@ final class ClientAgent {
             injector.releaseAll()
         }
         showCursor()
+        onAnchorChanged?(nil)
         onStateChanged?()
         DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in self?.connect() }
     }
@@ -214,6 +217,7 @@ final class ClientAgent {
                 // An address set by hand is an override, not something to fall back on later.
                 if config.anchorHost == nil { rememberAnchor(host) }
                 openDatagrams(to: host, welcome)
+                onAnchorChanged?(host)
             }
             hideIdleCursor()
             presence.watch(address: welcome.keyboardAddress)
