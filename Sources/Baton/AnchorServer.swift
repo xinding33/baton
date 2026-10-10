@@ -45,6 +45,10 @@ final class AnchorServer {
     /// A client passed on a key typed on the shared keyboard.
     var onForwardedKey: ((String, Key) -> Void)?
     var onKeyboardMoved: (() -> Void)?
+    /// A client's own trackpad, mouse or keyboard was used, with its cursor at this point.
+    var onLocalInput: ((String, CGPoint) -> Void)?
+    /// A client said it is going to sleep. It is dropped right after.
+    var onPeerSleeping: ((String) -> Void)?
     private var nextCommandId: UInt32 = 0
     private var commands: [UInt32: (peer: String, completion: (Bool, String) -> Void)] = [:]
 
@@ -120,6 +124,12 @@ final class AnchorServer {
                 self.onKeyboardMoved?()
             case let .keyboardResult(result):
                 self.commands.removeValue(forKey: result.id)?.completion(result.ok, result.detail)
+            case let .localInput(motion):
+                self.onLocalInput?(peer.name, CGPoint(x: motion.x, y: motion.y))
+            case .sleeping:
+                log("\(peer.name): going to sleep")
+                self.onPeerSleeping?(peer.name)
+                self.drop(peer.name)
             default:
                 break
             }

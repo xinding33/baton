@@ -74,7 +74,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             anchor?.setPaused(false)
             return anchor?.status() ?? "only the anchor can pause"
         case "sim":
-            return anchor?.simulate(Array(words.dropFirst())) ?? "only the anchor simulates input"
+            return anchor?.simulate(Array(words.dropFirst())) ?? client?.simulate(Array(words.dropFirst())) ?? ""
         case "arrange":
             return arrange(Array(words.dropFirst()))
         case "bt":

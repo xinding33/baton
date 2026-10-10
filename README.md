@@ -36,6 +36,13 @@ once. Macs that are away stay in the picture, dimmed, and keep their place.
 If you edit the file by hand, restart the agent afterwards:
 `launchctl kickstart -k gui/$(id -u)/com.xinding.baton`.
 
+## Using a Mac's own trackpad
+
+Touching a client's own trackpad, mouse or keyboard brings the shared cursor to that Mac, at the
+spot where its cursor is. The mouse then carries on from there. Keys from a client's own keyboard
+only count while the shared keyboard is attached to another Mac; Baton cannot tell two keyboards
+on one Mac apart.
+
 ## The shared keyboard
 
 With `keyboardAddress` (the keyboard's Bluetooth address) in the anchor's config, Baton tracks
@@ -46,6 +53,12 @@ With `keyboardFollows` on, the keyboard's Bluetooth connection itself moves to t
 has settled on, once typing pauses, so that Touch ID works there. `handoffStrategy` picks how:
 `reconnect` (the old Mac disconnects, the new one connects) or `repair` (the old Mac forgets the
 keyboard, the new one pairs with it).
+
+A Mac that goes to sleep while it has the keyboard forgets it first, and the anchor has the Mac
+with the cursor pair with it (the anchor itself when `keyboardFollows` is off). The same happens,
+ten seconds later, when the Mac that had the keyboard drops off the network. While the Mac it is
+paired with is still connected, a keyboard that disappears is taken to be switched off, and is
+left alone until it comes back.
 
 ## Build and install
 
@@ -72,7 +85,8 @@ System Settings → Privacy & Security:
   `keyboard follow on|off` switches following.
 - `Baton ctl arrange show` opens the arrangement window.
 - `Baton ctl sim move <dx> <dy>` (also `enter`, `click`, `key`, `scroll`) feeds synthetic input
-  through the anchor, for testing without touching the mouse.
+  through the anchor, for testing without touching the mouse. On a client, `sim local` stands in
+  for a touch of its trackpad and `sim sleep` goes through what it does before sleeping.
 
 Logs are in `~/Library/Logs/Baton/baton.log`.
 

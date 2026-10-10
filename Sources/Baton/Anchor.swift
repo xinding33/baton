@@ -43,7 +43,8 @@ final class Anchor {
     private var lastForwardedKeyAt: UInt64 = 0
     private var handoffInProgress: (from: String?, to: String, startedAt: UInt64)?
     private var handoffBlockedUntil: UInt64 = 0
-    private var keyboardMissingSince: UInt64?
+    private var custody = KeyboardCustody()
+    private var sleepingPeer: String?
     private var lastPointerActivityAt: UInt64 = 0
     private(set) var lastHandoff = "none yet"
     private var capturing = false
@@ -62,11 +63,20 @@ final class Anchor {
 
     func start() throws {
         server.onPeersChanged = { [weak self] in self?.rebuildLayout() }
+        server.onPeerSleeping = { [weak self] name in self?.sleepingPeer = name }
         server.onPeerLost = { [weak self] name in
-            guard let self, self.focus == .remote(name) else { return }
-            log("\(name) was lost while it had the cursor; bringing the cursor home")
+            guard let self else { return }
+            let asleep = self.sleepingPeer == name
+            self.sleepingPeer = nil
+            if self.custody.holder == name {
+                log("keyboard: \(name) had it and \(asleep ? "went to sleep" : "was lost")")
+            }
+            self.custody.departed(name, saidGoodbye: asleep, now: Net.monotonicMillis())
+            guard self.focus == .remote(name) else { return }
+            log("\(name) \(asleep ? "went to sleep" : "was lost") while it had the cursor; bringing the cursor home")
             self.goLocal(at: nil)
         }
+        server.onLocalInput = { [weak self] name, point in self?.usedDirectly(name, at: point) }
         server.onForwardedKey = { [weak self] name, key in self?.route(key, from: name) }
         server.onKeyboardMoved = { [weak self] in self?.onStateChanged?() }
         presence.onChange = { [weak self] _ in self?.onStateChanged?() }
@@ -215,6 +225,19 @@ final class Anchor {
         lastLocation = target
         log("cursor -> \(config.name) at (\(Int(target.x)), \(Int(target.y)))")
         onStateChanged?()
+    }
+
+    /// A client's own trackpad, mouse or keyboard was used. That is the Mac its user is looking
+    /// at, so the shared cursor goes there and carries on from where that Mac's cursor is.
+    private func usedDirectly(_ name: String, at point: CGPoint) {
+        guard let machine = layout.machines[name] else { return }
+        let point = machine.clamp(point)
+        if focus == .remote(name) {
+            remotePosition = point
+        } else if !paused, mayCross {
+            log("\(name) was used directly")
+            enterRemote(name, at: point, flags: [])
+        }
     }
 
     func setPaused(_ value: Bool) {
@@ -384,19 +407,21 @@ final class Anchor {
     /// hand that is not about to type.
     private func considerHandoff() {
         let now = Net.monotonicMillis()
-        guard config.keyboardFollows, config.keyboardAddress != nil, handoffInProgress == nil, !paused, now >= handoffBlockedUntil else { return }
+        let owner = keyboardOwner
+        if let owner { custody.attached(to: owner) }
+        guard config.keyboardAddress != nil, handoffInProgress == nil, now >= handoffBlockedUntil else { return }
+        guard let owner else {
+            // Attached nowhere. Nothing typed can be lost, so a claim does not wait for a quiet moment.
+            if custody.shouldClaim(now: now, online: onlineMachines) {
+                moveKeyboard(to: config.keyboardFollows ? focusName : config.name)
+            }
+            return
+        }
         let target = focusName
         let lastKeyAt = max(keyCapture.lastActivityAt, lastForwardedKeyAt)
-        guard now - focusSince >= 1000, now - lastKeyAt >= 1500, now - lastPointerActivityAt <= 400,
-              !keyCapture.anyKeyDown, forwardedKeysDown.isEmpty else { return }
-        if let owner = keyboardOwner {
-            keyboardMissingSince = nil
-            if owner != target { moveKeyboard(to: target) }
-        } else {
-            // Attached nowhere: give it a moment to show up, then have the cursor's machine claim it.
-            keyboardMissingSince = keyboardMissingSince ?? now
-            if now - keyboardMissingSince! >= 3000 { moveKeyboard(to: target) }
-        }
+        guard config.keyboardFollows, !paused, owner != target, now - focusSince >= 1000, now - lastKeyAt >= 1500,
+              now - lastPointerActivityAt <= 400, !keyCapture.anyKeyDown, forwardedKeysDown.isEmpty else { return }
+        moveKeyboard(to: target)
     }
 
     private func keyboard(_ action: KeyboardCommand.Action, on machine: String, completion: @escaping (Bool, String) -> Void) {
@@ -418,6 +443,7 @@ final class Anchor {
         guard owner != target else { return "the keyboard is already on \(target)" }
         let startedAt = Net.monotonicMillis()
         handoffInProgress = (owner, target, startedAt)
+        custody.handoffStarted()
         log("keyboard: \(owner ?? "nowhere") -> \(target) (\(config.handoffStrategy.rawValue))")
         onStateChanged?()
 
@@ -434,8 +460,9 @@ final class Anchor {
                         self.finishHandoff("\(target) failed (\(detail)); \(ok ? "returned to \(owner)" : "could not return it to \(owner): \(back)")", blockFor: 20000)
                     }
                 } else {
-                    // Probably switched off or out of range; don't keep paging it.
-                    self.finishHandoff("\(target) failed (\(detail))", blockFor: 60000)
+                    // Probably switched off or out of range. Keep trying, but less and less often.
+                    let wait = self.custody.claimFailed()
+                    self.finishHandoff("\(target) failed (\(detail)); next try in \(wait / 1000) s", blockFor: wait)
                 }
             }
         }
@@ -452,7 +479,6 @@ final class Anchor {
 
     private func finishHandoff(_ outcome: String, blockFor: UInt64) {
         handoffInProgress = nil
-        keyboardMissingSince = nil
         handoffBlockedUntil = Net.monotonicMillis() + blockFor
         lastHandoff = outcome
         log("keyboard: \(outcome)")
@@ -480,6 +506,7 @@ final class Anchor {
         }
         var report: [String: Any] = [
             "owner": keyboardOwner ?? "nowhere",
+            "pairedWith": custody.holder ?? "unknown",
             "follows": config.keyboardFollows,
             "strategy": config.handoffStrategy.rawValue,
             "lastHandoff": lastHandoff,

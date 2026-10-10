@@ -179,6 +179,10 @@ public enum Message: Codable, Sendable {
     case keyboardPresent(Bool)
     case keyboardCommand(KeyboardCommand)
     case keyboardResult(KeyboardResult)
+    /// Client to anchor: the client's own trackpad, mouse or keyboard was used, and its cursor is here.
+    case localInput(Motion)
+    /// Client to anchor: the client is about to sleep, and has let go of the shared keyboard if it had it.
+    case sleeping
 }
 
 public enum Wire {

@@ -32,6 +32,11 @@ final class Injector {
         IOPMAssertionDeclareUserActivity("Baton cursor arrived" as CFString, kIOPMUserActiveLocal, &assertion)
     }
 
+    /// The cursor was moved by something else; later moves are measured from where it is now.
+    func settle(at point: CGPoint) {
+        position = point
+    }
+
     func move(to motion: Motion) {
         let target = CGPoint(x: motion.x, y: motion.y)
         let type: CGEventType

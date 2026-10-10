@@ -29,22 +29,75 @@ final class ClientAgent {
     private let keyCapture = KeyCapture()
     private let presence = KeyboardPresence()
     private let mover = KeyboardMover()
+    private let sleepWatcher = SleepWatcher()
+    private var localReportPending = false
+    private var claimedAt: UInt64 = 0
+    private var asleep = false
+    private var localReports = 0
 
     var onStateChanged: (() -> Void)?
 
     init(config: Config, secret: Data) {
         self.config = config
         self.secret = secret
-        tap = EventTap(types: EventTap.keys) { [unowned self] type, event in self.captured(type, event) }
+        tap = EventTap(types: EventTap.pointerAndKeys) { [unowned self] type, event in self.captured(type, event) }
     }
 
-    /// While the shared keyboard is attached here but the cursor is on another machine, its
-    /// keystrokes belong to that machine, so they go to the anchor instead of being typed here.
+    /// Input from this Mac's own devices. Replayed input never gets here; the tap skips it.
     private func captured(_ type: CGEventType, _ event: CGEvent) -> Bool {
+        guard type == .keyDown || type == .keyUp || type == .flagsChanged else {
+            usedLocally()
+            return false
+        }
+        // While the shared keyboard is attached here but the cursor is on another machine, its
+        // keystrokes belong to that machine, so they go to the anchor instead of being typed here.
         let forwarding = connected && !active && presence.isPresent
-        guard case let .forward(key) = keyCapture.process(type, event, forwarding: forwarding), let link else { return false }
+        guard case let .forward(key) = keyCapture.process(type, event, forwarding: forwarding), let link else {
+            // With the shared keyboard elsewhere, a key can only have come from this Mac's own keyboard.
+            if type == .keyDown, !presence.isPresent { usedLocally() }
+            return false
+        }
         link.send(.key(key))
         return true
+    }
+
+    /// This Mac's own trackpad, mouse or keyboard was used. The anchor is told where the cursor
+    /// is, so that the shared cursor comes here and carries on from that spot.
+    private func usedLocally() {
+        guard connected, !localReportPending else { return }
+        localReportPending = true
+        // A moment later, so a burst of movement costs one message and the position is where it led.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.03) { [weak self] in
+            guard let self else { return }
+            self.localReportPending = false
+            guard self.connected else { return }
+            let here = cursorLocation()
+            if !self.active { self.claimedAt = Net.monotonicMillis() }
+            self.injector.settle(at: here)
+            self.localReports += 1
+            self.link?.send(.localInput(Motion(x: here.x, y: here.y, seq: 0)))
+        }
+    }
+
+    // MARK: Sleep
+
+    /// A sleeping Mac keeps the keyboard's pairing, and no other Mac can take it over. So the
+    /// keyboard is let go before sleep, and the anchor finds it a new home.
+    func willSleep(_ ready: @escaping () -> Void) {
+        guard connected else { return ready() }
+        // Stay away from the anchor until this Mac wakes, or it would count as present again.
+        asleep = true
+        let announce = { [weak self] in
+            self?.link?.send(.sleeping)
+            // Leave time for the message to go out before the network does.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2, execute: ready)
+        }
+        guard presence.isPresent, let address = presence.address else { return announce() }
+        log("going to sleep with the shared keyboard; letting go of it first")
+        mover.run([.forget], address: address) { ok, detail in
+            log("keyboard: release before sleep \(ok ? "succeeded" : "failed"): \(detail)")
+            announce()
+        }
     }
 
     private func startTapWhenPermitted() {
@@ -73,6 +126,12 @@ final class ClientAgent {
             self?.link?.send(.displays(currentDisplays()))
         }
         timer = repeatingTimer(every: 1) { [weak self] in self?.tick() }
+        sleepWatcher.onWillSleep = { [weak self] ready in
+            guard let self else { return ready() }
+            self.willSleep(ready)
+        }
+        sleepWatcher.onDidWake = { [weak self] in self?.didWake() }
+        sleepWatcher.start()
         connect()
     }
 
@@ -109,8 +168,15 @@ final class ClientAgent {
         }
     }
 
+    func didWake() {
+        log("woke up")
+        asleep = false
+        // The connection from before sleep is dead; don't wait to find that out.
+        if let link { link.close("woke from sleep") } else { connect() }
+    }
+
     private func connect() {
-        guard link == nil else { return }
+        guard link == nil, !asleep else { return }
         let endpoint: NWEndpoint
         if let host = config.anchorHost {
             endpoint = .hostPort(host: NWEndpoint.Host(host), port: NWEndpoint.Port(rawValue: config.port)!)
@@ -233,7 +299,8 @@ final class ClientAgent {
             lastMotionSeq = motion.seq
             showCursor()
             injector.wake()
-            injector.move(to: motion)
+            // When this Mac's own trackpad called the cursor over, it is already where it should be.
+            if Net.monotonicMillis() - claimedAt > 500 { injector.move(to: motion) }
             onStateChanged?()
         case .leave:
             active = false
@@ -285,6 +352,22 @@ final class ClientAgent {
         }
     }
 
+    /// Stands in for things that are awkward to cause by hand while testing.
+    func simulate(_ words: [String]) -> String {
+        switch words.first {
+        case "local":
+            usedLocally()
+            return "reported this Mac as used directly"
+        case "sleep":
+            willSleep { [weak self] in
+                DispatchQueue.main.asyncAfter(deadline: .now() + 5) { self?.didWake() }
+            }
+            return "going through the motions of sleeping for five seconds"
+        default:
+            return "usage: sim local | sleep"
+        }
+    }
+
     /// Runs single Bluetooth steps on this Mac; the outcome goes to the log.
     func bluetoothSteps(_ words: [String]) -> String {
         guard let address = presence.address else { return "the anchor has not named a keyboard" }
@@ -305,6 +388,8 @@ final class ClientAgent {
             "injected": injector.injected,
             "cursorHidden": CursorVisibility.isHidden,
             "keyboardTap": tap.isActive,
+            "asleep": asleep,
+            "localReports": localReports,
             "keyboard": presence.address.map { mover.describe(address: $0) } ?? ["configured": false],
             "datagramsReceived": datagramsReceived,
             "discovered": discovered.map { "\($0)" } ?? "none",
