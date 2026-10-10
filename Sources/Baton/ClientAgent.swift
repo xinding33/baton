@@ -159,7 +159,8 @@ final class ClientAgent {
             lastMotionSeq = 0
             log("connected to \(welcome.anchorName)")
             if let host = link.remoteHost {
-                rememberAnchor(host)
+                // An address set by hand is an override, not something to fall back on later.
+                if config.anchorHost == nil { rememberAnchor(host) }
                 openDatagrams(to: host, welcome)
             }
             onStateChanged?()
