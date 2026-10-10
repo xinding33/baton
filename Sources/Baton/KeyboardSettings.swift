@@ -55,6 +55,12 @@ final class KeyboardSettings {
         }
     }
 
+    /// Whether the keyboard's own connection moves with the cursor, `keyboardFollows` in the config.
+    private static let connections: [(follows: Bool, title: String, detail: String)] = [
+        (false, "Stays on one Mac", "The keyboard stays connected to one Mac, and its keys reach the others over the network. Touch ID only works on the Mac it is connected to."),
+        (true, "Follows the cursor", "The keyboard connects to the Mac the cursor settles on, so that Touch ID works there. That takes about two seconds, and waits for a pause in typing."),
+    ]
+
     private static let strategies: [(HandoffStrategy, title: String, detail: String)] = [
         (.reconnect, "Reconnect", "The Mac that has the keyboard drops its connection and the other one connects. Both stay paired with it."),
         (.repair, "Forget and pair again", "The Mac that has the keyboard forgets it, and the other one pairs with it afresh."),
@@ -73,7 +79,7 @@ final class KeyboardSettings {
         } else if keyboards?.isEmpty == true {
             note = "No Bluetooth keyboard is paired with this Mac. Pair it in System Settings › Bluetooth, then open this window again."
         } else {
-            note = "Baton follows this keyboard from Mac to Mac, so that its keys reach the Mac the cursor is on."
+            note = "Baton keeps track of which Mac this keyboard is connected to, so that its keys reach the Mac the cursor is on."
         }
         var rows: [SettingsRow] = [
             .header("Shared keyboard"),
@@ -91,12 +97,14 @@ final class KeyboardSettings {
         }
         if let failure { rows.append(.note(failure)) }
 
+        let connection = KeyboardSettings.connections.firstIndex { $0.follows == config.keyboardFollows } ?? 0
         let strategy = KeyboardSettings.strategies.firstIndex { $0.0 == config.handoffStrategy } ?? 0
         rows += [
             .header("Moving between Macs"),
-            .toggle("Keyboard follows the cursor", on: config.keyboardFollows, enabled: saved != nil,
-                    detail: "Also moves the keyboard’s own Bluetooth connection to the Mac the cursor settles on. That takes about two seconds, and waits for a pause in typing.") { [unowned self] on in
-                self.anchor.setKeyboardFollows(on)
+            .choice("Bluetooth connection", options: KeyboardSettings.connections.map(\.title), selected: connection, enabled: saved != nil,
+                    detail: KeyboardSettings.connections[connection].detail) { [unowned self] index in
+                guard KeyboardSettings.connections.indices.contains(index) else { return }
+                self.anchor.setKeyboardFollows(KeyboardSettings.connections[index].follows)
             },
             .choice("To move it", options: KeyboardSettings.strategies.map(\.title), selected: strategy, enabled: saved != nil,
                     detail: KeyboardSettings.strategies[strategy].detail) { [unowned self] index in

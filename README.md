@@ -93,7 +93,7 @@ Everything that is set once and left alone is in **Settings…**, a pane for eac
 |---|---|---|
 | General | Name, role, pairing code, permissions, **Open at Login**, **Show in the menu bar** | this Mac |
 | Mouse | Reversing the mouse wheel | this Mac |
-| Keyboard | The shared keyboard, whether it follows the cursor and how it moves, and sharing the clipboard (anchor only) | all Macs |
+| Keyboard | The shared keyboard, whether its Bluetooth connection follows the cursor and how it moves, and sharing the clipboard (anchor only) | all Macs |
 | Displays | Turning external displays off and on; the anchor also lists the other Macs' | each Mac's own |
 | Arrange | Where each Mac sits (anchor only) | all Macs |
 | Sleep & Wake | Waking together and staying awake | this Mac |
@@ -149,11 +149,19 @@ as `keyboardAddress`, the keyboard's Bluetooth address, in the anchor's config. 
 which Mac the keyboard is attached to, and the menu says which and can move it. Keys typed while
 the cursor is on a different Mac are forwarded there, whichever Mac the keyboard is on.
 
-With **Keyboard follows the cursor** on (`keyboardFollows`), the keyboard's Bluetooth connection
-itself moves to the Mac the cursor has settled on, once typing pauses, so that Touch ID works
-there. **To move it** (`handoffStrategy`) picks how: **Reconnect** (`reconnect`: the old Mac
-disconnects, the new one connects) or **Forget and pair again** (`repair`: the old Mac forgets the
-keyboard, the new one pairs with it).
+**Bluetooth connection** (`keyboardFollows`) says what happens to the keyboard's own connection
+as the cursor moves:
+
+- **Stays on one Mac** (`false`, the default). The keyboard stays connected to the Mac it is on,
+  and its keys get to the others over the network. Touch ID only works on the Mac the keyboard is
+  connected to. The menu still moves it to another Mac when asked.
+- **Follows the cursor** (`true`). The connection moves to the Mac the cursor has settled on, once
+  typing pauses, so that Touch ID works there. A move takes about two seconds, during which the
+  keyboard types nowhere.
+
+**To move it** (`handoffStrategy`) picks how the keyboard changes Macs: **Reconnect** (`reconnect`:
+the old Mac disconnects, the new one connects) or **Forget and pair again** (`repair`: the old Mac
+forgets the keyboard, the new one pairs with it).
 
 A Mac that goes to sleep while it has the keyboard forgets it first, and the anchor has the Mac
 with the cursor pair with it (the anchor itself when `keyboardFollows` is off). The same happens,

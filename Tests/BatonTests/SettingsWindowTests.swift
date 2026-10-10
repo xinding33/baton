@@ -395,14 +395,24 @@ final class SettingsWindowTests: XCTestCase {
 
         // How it moves is switched there and then, through the anchor, with no restart.
         rows = keyboard.rows()
-        XCTAssertEqual(rows.first { $0.title == "Keyboard follows the cursor" }?.isOn, false)
-        XCTAssertNotNil(rows.press("Keyboard follows the cursor"))
+        guard case let .choice(connections, connection) = rows.first(where: { $0.title == "Bluetooth connection" })?.kind else { return XCTFail("no choice of connection") }
+        XCTAssertEqual(connections, ["Stays on one Mac", "Follows the cursor"])
+        XCTAssertEqual(connection, 0, "Bluetooth is left alone until it is asked for")
+        XCTAssertEqual(rows.choose("Follows the cursor", for: "Bluetooth connection"), "chose “Follows the cursor”")
         XCTAssertEqual(rows.choose("Forget and pair again", for: "To move it"), "chose “Forget and pair again”")
         XCTAssertTrue(anchor.keyboardFollows)
         let written = try loadConfig(from: home.appendingPathComponent("config.json"))
         XCTAssertTrue(written.keyboardFollows)
         XCTAssertEqual(written.handoffStrategy, .repair)
         XCTAssertEqual(relaunches, 1)
+        snapshot(keyboard.pane, "23-pane-keyboard-follows")
+
+        // Without it, the keyboard stays where it is, which is said to cost Touch ID elsewhere.
+        rows = keyboard.rows()
+        XCTAssertEqual(rows.choose("Stays on one Mac", for: "Bluetooth connection"), "chose “Stays on one Mac”")
+        XCTAssertFalse(anchor.keyboardFollows)
+        XCTAssertFalse(try loadConfig(from: home.appendingPathComponent("config.json")).keyboardFollows)
+        XCTAssertEqual(keyboard.rows().first { $0.title == "Bluetooth connection" }?.detail?.contains("Touch ID only works on the Mac it is connected to"), true)
 
         // A file that could not be written is said, and nothing restarts into the old keyboard.
         keyboard.writtenConfig = { nil }
@@ -418,7 +428,7 @@ final class SettingsWindowTests: XCTestCase {
         keyboard.bluetoothAllowed = { false }
         let rows = keyboard.rows()
         XCTAssertEqual(rows[1].detail, "Allow Bluetooth under General to see the keyboards paired with this Mac.")
-        XCTAssertEqual(rows.first { $0.title == "Keyboard follows the cursor" }?.enabled, false)
-        XCTAssertEqual(rows.press("Keyboard follows the cursor"), "“Keyboard follows the cursor” is greyed out")
+        XCTAssertEqual(rows.first { $0.title == "Bluetooth connection" }?.enabled, false)
+        XCTAssertEqual(rows.choose("Follows the cursor", for: "Bluetooth connection"), "“Bluetooth connection” is greyed out")
     }
 }
