@@ -78,6 +78,33 @@ Baton takes over from [Backspin](https://github.com/xinding33/backspin). While B
 ScrollFlip is running on a Mac, Baton does not reverse there, since two reversals cancel out, and
 the menu says so. Quit the other app and Baton starts reversing at once.
 
+## Displays
+
+Each Mac's menu lists its external displays. Click one to turn it off while its cable stays
+plugged in, and click it again to reconnect it. The anchor's menu also lists the other Macs'
+displays and switches them over the link. This is [Wink](https://github.com/xinding33/wink)
+built in, with Wink's rules:
+
+- A display you turn off is remembered, and turned off again whenever it appears: after login,
+  after sleep, after a cable change. Reconnecting it from the menu forgets it.
+- The built-in screen and the last active screen stay on. Mirrored displays have to be
+  un-mirrored first.
+- A display is recorded in `~/Library/Application Support/Baton/displays/recovery.json` before
+  it is turned off. A watchdog process reconnects the recorded displays if every remaining
+  screen disappears, or if Baton stops and no new Baton has taken over 20 seconds later. It
+  logs to `~/Library/Logs/Baton/display-watchdog.log`.
+
+Where Baton differs from Wink is its own restart. Displays that are off stay off when Baton is
+redeployed or restarted after a crash, so a deploy does not rearrange your windows. **Quit
+Baton** reconnects them; they are turned off again when Baton next starts.
+
+While Wink itself is running on a Mac, Baton leaves that Mac's displays alone, and its menu
+says so. The first time Baton takes charge of a Mac's displays, it copies the ones Wink
+remembered there.
+
+A display that is off is not part of the cursor layout. If the cursor is on a display when it
+is turned off, it moves to one that is left.
+
 ## Build and install
 
 ```sh
@@ -105,6 +132,11 @@ System Settings → Privacy & Security:
   and what became of it; `scroll on|off`, `scroll vertical on|off` and `scroll horizontal on|off`
   change it.
 - `Baton ctl arrange show` opens the arrangement window.
+- `Baton ctl displays` prints each Mac's displays as the menu shows them; `displays off <name>`,
+  `displays on <name>` and `displays on all` switch this Mac's, and with a machine's name first
+  (`displays mini off <name>`) the anchor switches another Mac's.
+- `Baton display-check` prints what display control sees on a Mac. It works without the agent
+  and changes nothing.
 - `Baton ctl sim move <dx> <dy>` (also `enter`, `click`, `key`, `scroll`) feeds synthetic input
   through the anchor, for testing without touching the mouse. On a client, `sim local` stands in
   for a touch of its trackpad and `sim sleep` goes through what it does before sleeping.

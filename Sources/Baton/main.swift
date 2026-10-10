@@ -10,6 +10,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var activity: NSObjectProtocol?
     private var terminationSource: DispatchSourceSignal?
     private var arrangementWindow: ArrangementWindowController?
+    private var displayMenu: DisplayMenu?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         let config: Config
@@ -44,6 +45,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             client.start()
             self.client = client
         }
+        displayMenu = DisplayMenu(anchor: anchor, client: client) { [weak self] in self?.refreshMenu() }
 
         // Hand the mouse back before being stopped, e.g. by a redeploy.
         signal(SIGTERM, SIG_IGN)
@@ -87,8 +89,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return anchor?.keyboardCommand(Array(words.dropFirst())) ?? "only the anchor moves the keyboard"
         case "scroll":
             return ScrollReverser.shared.command(Array(words.dropFirst()))
+        case "displays":
+            return displayMenu?.command(Array(words.dropFirst())) ?? ""
         default:
-            return "commands: status, home, pause, resume, sim, arrange, keyboard, scroll"
+            return "commands: status, home, pause, resume, sim, arrange, keyboard, scroll, displays"
         }
     }
 
@@ -145,6 +149,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             menu.addItem(withTitle: client.isConnected ? "Connected to the anchor" : "Looking for the anchor…", action: nil, keyEquivalent: "")
         }
         ScrollReverser.shared.addMenuItems(to: menu)
+        displayMenu?.addItems(to: menu)
         menu.addItem(.separator())
         menu.addItem(withTitle: "Quit Baton", action: #selector(quit), keyEquivalent: "").target = self
         statusItem.button?.title = title
@@ -162,14 +167,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func togglePause() { anchor.map { $0.setPaused(!$0.paused) } }
     @objc private func quit() {
         anchor?.goLocal(at: nil)
-        // Exit cleanly so launchd leaves the agent stopped.
-        exit(0)
+        // Exit cleanly so launchd leaves the agent stopped. Displays that are off come back first.
+        guard let displayMenu else { exit(0) }
+        displayMenu.quit()
     }
 }
 
 let arguments = Array(CommandLine.arguments.dropFirst())
 if arguments.first == "ctl" {
     exit(controlClient(Array(arguments.dropFirst())))
+}
+if arguments.first == "display-watchdog" {
+    exit(runDisplayWatchdog(Array(arguments.dropFirst())))
+}
+if arguments.first == "display-check" {
+    exit(runDisplayCheck(Array(arguments.dropFirst())))
 }
 
 let app = NSApplication.shared
