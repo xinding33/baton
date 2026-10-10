@@ -31,6 +31,7 @@ final class Anchor {
     private var lastLocation = cursorLocation()
     private var buttonsDown: Set<Int> = []
     private let keyCapture = KeyCapture()
+    private var mediaKeys = MediaKeyCapture()
     /// Replays keys that a client forwards while the cursor is on this Mac.
     private let injector = Injector()
     private var motionSeq: UInt64 = 0
@@ -80,6 +81,7 @@ final class Anchor {
         }
         server.onLocalInput = { [weak self] name, point in self?.usedDirectly(name, at: point) }
         server.onForwardedKey = { [weak self] name, key in self?.route(key, from: name) }
+        server.onForwardedMediaKey = { [weak self] key in self?.route(key) }
         server.onKeyboardMoved = { [weak self] in self?.onStateChanged?() }
         server.onDisplayPanel = { [weak self] in self?.onStateChanged?() }
         presence.onChange = { [weak self] _ in self?.onStateChanged?() }
@@ -352,6 +354,13 @@ final class Anchor {
     }
 
     private func handle(_ type: CGEventType, _ event: CGEvent) -> Bool {
+        if type == EventTap.systemDefined {
+            var target: String?
+            if case let .remote(name) = focus { target = name }
+            guard let key = MediaKey(event), mediaKeys.forwards(key, forwarding: target != nil), let target else { return false }
+            server.send(target, .mediaKey(key))
+            return true
+        }
         if type != .keyDown, type != .keyUp, type != .flagsChanged {
             lastPointerActivityAt = Net.monotonicMillis()
         }
@@ -423,6 +432,15 @@ final class Anchor {
         switch focus {
         case .local: injector.key(key)
         case let .remote(target): server.send(target, .key(key))
+        }
+    }
+
+    /// The same for a volume, brightness or playback key.
+    private func route(_ key: MediaKey) {
+        lastForwardedKeyAt = Net.monotonicMillis()
+        switch focus {
+        case .local: injector.mediaKey(key)
+        case let .remote(target): server.send(target, .mediaKey(key))
         }
     }
 

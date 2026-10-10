@@ -162,6 +162,11 @@ Mac still holds the keyboard's pairing, a keyboard that disappears is taken to b
 and is left alone until it comes back. If no connected Mac holds its pairing, it cannot come back
 by itself, so a Mac pairs with it afresh.
 
+The volume, mute, brightness and playback keys go with the cursor like the other keys, and act on
+the Mac it is on. What stays with the Mac the keyboard is connected to is what never reaches Baton:
+Touch ID, and everything typed while a password field has the keyboard there, which macOS hides
+from every other app. Click somewhere else on that Mac first.
+
 ## The mouse wheel
 
 With macOS "Natural scrolling" on, Baton reverses notched mouse wheels and leaves trackpads alone,

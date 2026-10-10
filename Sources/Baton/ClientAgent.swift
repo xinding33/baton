@@ -28,6 +28,7 @@ final class ClientAgent {
     private var idleCursorWatch: DispatchSourceTimer?
     private var tap: EventTap!
     private let keyCapture = KeyCapture()
+    private var mediaKeys = MediaKeyCapture()
     private let mover = KeyboardMover()
     private lazy var presence = KeyboardPresence(mover: mover)
     private let sleepWatcher = SleepWatcher()
@@ -58,6 +59,13 @@ final class ClientAgent {
 
     /// Input from this Mac's own devices. Replayed input never gets here; the tap skips it.
     private func captured(_ type: CGEventType, _ event: CGEvent) -> Bool {
+        // A volume, brightness or playback key goes where the shared keyboard's other keys go.
+        // Pressed on this Mac's own keyboard, it does not bring the cursor here.
+        if type == EventTap.systemDefined {
+            guard let key = MediaKey(event), mediaKeys.forwards(key, forwarding: connected && !active && presence.isPresent), let link else { return false }
+            link.send(.mediaKey(key))
+            return true
+        }
         guard type == .keyDown || type == .keyUp || type == .flagsChanged else {
             usedLocally()
             return false
@@ -337,6 +345,8 @@ final class ClientAgent {
             if active { injector.scroll(scroll) }
         case let .key(key):
             if active { injector.key(key) }
+        case let .mediaKey(key):
+            if active { injector.mediaKey(key) }
         case let .displayAction(action):
             onDisplayAction?(action)
         case let .wake(request):
