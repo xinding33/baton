@@ -29,7 +29,23 @@ Each machine is placed relative to another in the anchor's
 - `scale`: stretches a machine's edge so displays of different heights map onto each other fully
 - `timeoutMs`: how long a client may go silent before the cursor returns to the anchor
 
-Restart the agent after editing: `launchctl kickstart -k gui/$(id -u)/com.xinding.baton`.
+The easier way to change the layout is **Arrange Macs…** in the anchor's menu bar item: drag a
+Mac to where it sits on your desk and drop it. It snaps against its neighbours and applies at
+once. Macs that are away stay in the picture, dimmed, and keep their place.
+
+If you edit the file by hand, restart the agent afterwards:
+`launchctl kickstart -k gui/$(id -u)/com.xinding.baton`.
+
+## The shared keyboard
+
+With `keyboardAddress` (the keyboard's Bluetooth address) in the anchor's config, Baton tracks
+which Mac the keyboard is attached to. Keys typed while the cursor is on a different Mac are
+forwarded there, whichever Mac the keyboard is on.
+
+With `keyboardFollows` on, the keyboard's Bluetooth connection itself moves to the Mac the cursor
+has settled on, once typing pauses, so that Touch ID works there. `handoffStrategy` picks how:
+`reconnect` (the old Mac disconnects, the new one connects) or `repair` (the old Mac forgets the
+keyboard, the new one pairs with it).
 
 ## Build and install
 
@@ -44,14 +60,17 @@ System Settings → Privacy & Security:
 
 | Mac | Permissions |
 |---|---|
-| anchor | Accessibility, Input Monitoring |
-| clients | Accessibility, Local Network |
+| anchor | Accessibility, Bluetooth |
+| clients | Accessibility, Local Network, Bluetooth |
 
 ## Controls
 
 - **⌃⌥⌘⎋** brings the cursor back to the anchor.
 - The menu bar item (⇄) shows where the cursor is and can pause sharing.
 - `Baton ctl status` prints the agent's state; `Baton ctl home|pause|resume` control it.
+- `Baton ctl keyboard` shows where the keyboard is; `keyboard move <machine>` hands it over and
+  `keyboard follow on|off` switches following.
+- `Baton ctl arrange show` opens the arrangement window.
 - `Baton ctl sim move <dx> <dy>` (also `enter`, `click`, `key`, `scroll`) feeds synthetic input
   through the anchor, for testing without touching the mouse.
 

@@ -77,8 +77,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return anchor?.simulate(Array(words.dropFirst())) ?? "only the anchor simulates input"
         case "arrange":
             return arrange(Array(words.dropFirst()))
+        case "keyboard":
+            return anchor?.keyboardCommand(Array(words.dropFirst())) ?? "only the anchor moves the keyboard"
         default:
-            return "commands: status, home, pause, resume, sim, arrange"
+            return "commands: status, home, pause, resume, sim, arrange, keyboard"
         }
     }
 
@@ -116,6 +118,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             menu.addItem(withTitle: "Bring cursor home (⌃⌥⌘⎋)", action: #selector(home), keyEquivalent: "").target = self
             menu.addItem(withTitle: anchor.paused ? "Resume sharing" : "Pause sharing", action: #selector(togglePause), keyEquivalent: "").target = self
             menu.addItem(withTitle: "Arrange Macs…", action: #selector(showArrangement), keyEquivalent: "").target = self
+            menu.addItem(.separator())
+            menu.addItem(withTitle: "Keyboard is on: \(anchor.keyboardOwner ?? "no Mac")", action: nil, keyEquivalent: "")
+            let follow = menu.addItem(withTitle: "Keyboard follows the cursor", action: #selector(toggleKeyboardFollows), keyEquivalent: "")
+            follow.target = self
+            follow.state = anchor.keyboardFollows ? .on : .off
         } else if let client {
             title = client.isConnected ? (client.active ? "⇄ ●" : "⇄") : "⇄ ?"
             menu.addItem(withTitle: client.isConnected ? "Connected to the anchor" : "Looking for the anchor…", action: nil, keyEquivalent: "")
@@ -128,6 +135,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func home() { anchor?.goLocal(at: nil) }
     @objc private func showArrangement() { arrangementWindow?.show() }
+    @objc private func toggleKeyboardFollows() { anchor.map { $0.setKeyboardFollows(!$0.keyboardFollows) } }
     @objc private func togglePause() { anchor.map { $0.setPaused(!$0.paused) } }
     @objc private func quit() {
         anchor?.goLocal(at: nil)

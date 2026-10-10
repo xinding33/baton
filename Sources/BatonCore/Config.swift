@@ -14,6 +14,11 @@ public struct Config: Codable, Sendable {
     /// Anchor only: how long a client may stay silent before the cursor comes home.
     public var timeoutMs: [String: Int]
     public var defaultTimeoutMs: Int
+    /// Anchor only: Bluetooth address of the keyboard shared between the machines.
+    public var keyboardAddress: String?
+    /// Anchor only: move the keyboard to whichever machine the cursor settles on.
+    public var keyboardFollows: Bool
+    public var handoffStrategy: HandoffStrategy
 
     public init(name: String, role: Role) {
         self.name = name
@@ -23,6 +28,9 @@ public struct Config: Codable, Sendable {
         placements = []
         timeoutMs = [:]
         defaultTimeoutMs = 800
+        keyboardAddress = nil
+        keyboardFollows = false
+        handoffStrategy = .reconnect
     }
 
     public init(from decoder: Decoder) throws {
@@ -34,6 +42,9 @@ public struct Config: Codable, Sendable {
         placements = try c.decodeIfPresent([Placement].self, forKey: .placements) ?? []
         timeoutMs = try c.decodeIfPresent([String: Int].self, forKey: .timeoutMs) ?? [:]
         defaultTimeoutMs = try c.decodeIfPresent(Int.self, forKey: .defaultTimeoutMs) ?? 800
+        keyboardAddress = try c.decodeIfPresent(String.self, forKey: .keyboardAddress)
+        keyboardFollows = try c.decodeIfPresent(Bool.self, forKey: .keyboardFollows) ?? false
+        handoffStrategy = try c.decodeIfPresent(HandoffStrategy.self, forKey: .handoffStrategy) ?? .reconnect
     }
 
     public func timeout(for peer: String) -> TimeInterval {

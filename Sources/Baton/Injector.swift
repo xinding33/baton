@@ -5,6 +5,9 @@ import IOKit.pwr_mgt
 
 /// Replays the anchor's input on this machine as if a mouse and keyboard were attached.
 final class Injector {
+    /// Stamped on every replayed event so the event taps can tell it from real input.
+    static let marker: Int64 = 0x4261_746F_6E
+
     private let source = CGEventSource(stateID: .hidSystemState)
     private var buttonsDown: Set<Int> = []
     private var keysDown: Set<UInt16> = []
@@ -15,6 +18,7 @@ final class Injector {
     private func post(_ event: CGEvent?, flags: UInt64) {
         guard let event else { return }
         event.flags = CGEventFlags(rawValue: flags)
+        event.setIntegerValueField(.eventSourceUserData, value: Injector.marker)
         event.post(tap: .cghidEventTap)
         injected += 1
     }

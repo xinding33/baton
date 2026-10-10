@@ -11,6 +11,8 @@ final class PeerSession {
     var datagramsSeenAt: UInt64 = 0
     var lastPongAt: UInt64
     var rttMs: Double = 0
+    /// Whether the shared keyboard is attached to this client.
+    var keyboardPresent = false
 
     init(name: String, link: Link, displays: [DisplayInfo], codec: DatagramCodec) {
         self.name = name
@@ -40,6 +42,11 @@ final class AnchorServer {
     /// A client joined, left, or changed its displays.
     var onPeersChanged: (() -> Void)?
     var onPeerLost: ((String) -> Void)?
+    /// A client passed on a key typed on the shared keyboard.
+    var onForwardedKey: ((String, Key) -> Void)?
+    var onKeyboardMoved: (() -> Void)?
+    private var nextCommandId: UInt32 = 0
+    private var commands: [UInt32: (peer: String, completion: (Bool, String) -> Void)] = [:]
 
     init(config: Config, secret: Data) {
         self.config = config
@@ -106,6 +113,13 @@ final class AnchorServer {
                 peer.lastPongAt = now
                 let sample = Double(now &- sentAt)
                 peer.rttMs = peer.rttMs == 0 ? sample : peer.rttMs * 0.8 + sample * 0.2
+            case let .key(key):
+                self.onForwardedKey?(peer.name, key)
+            case let .keyboardPresent(present):
+                peer.keyboardPresent = present
+                self.onKeyboardMoved?()
+            case let .keyboardResult(result):
+                self.commands.removeValue(forKey: result.id)?.completion(result.ok, result.detail)
             default:
                 break
             }
@@ -115,7 +129,7 @@ final class AnchorServer {
             log("\(peer.name): disconnected (\(reason))")
             self.drop(peer.name)
         }
-        link.send(.welcome(Welcome(anchorName: config.name, sessionId: codec.sessionId, udpKey: key, udpPort: config.port)))
+        link.send(.welcome(Welcome(anchorName: config.name, sessionId: codec.sessionId, udpKey: key, udpPort: config.port, keyboardAddress: config.keyboardAddress)))
         log("\(hello.name): connected, \(hello.displays.count) display(s)")
         onPeersChanged?()
     }
@@ -125,8 +139,25 @@ final class AnchorServer {
         peer.link.onClose = nil
         peer.link.close("dropped")
         peer.datagrams?.cancel()
+        for (id, command) in commands where command.peer == name {
+            commands[id] = nil
+            command.completion(false, "\(name) disconnected")
+        }
         onPeerLost?(name)
         onPeersChanged?()
+        onKeyboardMoved?()
+    }
+
+    /// Asks a client to release or take the shared keyboard and reports how it went.
+    func sendKeyboardCommand(_ name: String, action: KeyboardCommand.Action, address: String, strategy: HandoffStrategy, completion: @escaping (Bool, String) -> Void) {
+        guard let peer = peers[name] else { return completion(false, "\(name) is not connected") }
+        nextCommandId += 1
+        let id = nextCommandId
+        commands[id] = (name, completion)
+        peer.link.send(.keyboardCommand(KeyboardCommand(id: id, action: action, address: address, strategy: strategy)))
+        DispatchQueue.main.asyncAfter(deadline: .now() + 25) { [weak self] in
+            self?.commands.removeValue(forKey: id)?.completion(false, "\(name) did not answer")
+        }
     }
 
     private func receiveDatagram(on connection: NWConnection) {

@@ -20,6 +20,8 @@
     <true/>
     <key>NSLocalNetworkUsageDescription</key>
     <string>Baton shares your mouse and keyboard with your other Macs on this network.</string>
+    <key>NSBluetoothAlwaysUsageDescription</key>
+    <string>Baton moves your keyboard's Bluetooth connection to the Mac you are working on.</string>
     <key>NSBonjourServices</key>
     <array>
         <string>_baton._tcp</string>

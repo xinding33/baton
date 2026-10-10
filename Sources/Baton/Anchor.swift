@@ -30,11 +30,21 @@ final class Anchor {
     private var parkPoint: CGPoint = .zero
     private var lastLocation = cursorLocation()
     private var buttonsDown: Set<Int> = []
-    /// Keys that went down while the focus was local; their releases must stay local too.
-    private var keysDownLocally: Set<UInt16> = []
-    private var modifiersDownLocally: Set<UInt16> = []
-    private var modifiersDown: Set<UInt16> = []
+    private let keyCapture = KeyCapture()
+    /// Replays keys that a client forwards while the cursor is on this Mac.
+    private let injector = Injector()
     private var motionSeq: UInt64 = 0
+
+    // The shared keyboard and its handoff between machines.
+    private let presence = KeyboardPresence()
+    private let mover = KeyboardMover()
+    private var focusSince = Net.monotonicMillis()
+    private var forwardedKeysDown: Set<UInt16> = []
+    private var lastForwardedKeyAt: UInt64 = 0
+    private var handoffInProgress: (from: String?, to: String, startedAt: UInt64)?
+    private var handoffBlockedUntil: UInt64 = 0
+    private var keyboardMissingSince: UInt64?
+    private(set) var lastHandoff = "none yet"
     private var capturing = false
     private var lastCrossingAt: UInt64 = 0
     /// After a crossing the cursor must settle this long before it may cross again, so a hand
@@ -46,7 +56,7 @@ final class Anchor {
     init(config: Config, secret: Data) {
         self.config = config
         server = AnchorServer(config: config, secret: secret)
-        tap = EventTap { [unowned self] type, event in self.handle(type, event) }
+        tap = EventTap(types: EventTap.pointerAndKeys) { [unowned self] type, event in self.handle(type, event) }
     }
 
     func start() throws {
@@ -56,6 +66,11 @@ final class Anchor {
             log("\(name) was lost while it had the cursor; bringing the cursor home")
             self.goLocal(at: nil)
         }
+        server.onForwardedKey = { [weak self] name, key in self?.route(key, from: name) }
+        server.onKeyboardMoved = { [weak self] in self?.onStateChanged?() }
+        presence.onChange = { [weak self] _ in self?.onStateChanged?() }
+        presence.watch(address: config.keyboardAddress)
+        if config.keyboardAddress != nil { mover.requestPermission() }
         try server.start()
         displays = currentDisplays()
         if let data = try? Data(contentsOf: Anchor.knownDisplaysFile),
@@ -131,15 +146,19 @@ final class Anchor {
     /// Adopts an edited arrangement and saves it to the config file.
     func apply(_ arrangement: Arrangement) {
         config.placements = arrangement.placements()
+        saveConfig()
+        log("arrangement changed: " + config.placements.map { "\($0.machine) \($0.side.rawValue) of \($0.of)" }.joined(separator: ", "))
+        rebuildLayout()
+    }
+
+    private func saveConfig() {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         do {
             try encoder.encode(config).write(to: Paths.config, options: .atomic)
         } catch {
-            log("could not save the arrangement: \(error)")
+            log("could not save the config: \(error)")
         }
-        log("arrangement changed: " + config.placements.map { "\($0.machine) \($0.side.rawValue) of \($0.of)" }.joined(separator: ", "))
-        rebuildLayout()
     }
 
     // MARK: Focus changes
@@ -155,7 +174,10 @@ final class Anchor {
 
     private func enterRemote(_ name: String, at point: CGPoint, flags: CGEventFlags) {
         lastCrossingAt = Net.monotonicMillis()
+        focusSince = lastCrossingAt
         if focus == .local {
+            // Keys a client was holding down on this Mac must not stay down after the cursor leaves.
+            injector.releaseAll()
             parkPoint = cursorLocation()
             // Only take the mouse away from the local cursor when its events can be forwarded.
             if tap.isActive {
@@ -177,6 +199,7 @@ final class Anchor {
     func goLocal(at point: CGPoint?) {
         guard case let .remote(name) = focus else { return }
         lastCrossingAt = Net.monotonicMillis()
+        focusSince = lastCrossingAt
         server.send(name, .leave)
         focus = .local
         let target = point ?? parkPoint
@@ -202,6 +225,7 @@ final class Anchor {
 
     private func heartbeat() {
         server.pingAll()
+        considerHandoff()
         guard case let .remote(name) = focus, let peer = server.peers[name] else { return }
         let silence = TimeInterval(Net.monotonicMillis() - peer.lastPongAt) / 1000
         if silence > config.timeout(for: name) {
@@ -292,41 +316,163 @@ final class Anchor {
             )))
             return true
 
-        case .keyDown, .keyUp:
+        case .keyDown, .keyUp, .flagsChanged:
             let code = UInt16(event.getIntegerValueField(.keyboardEventKeycode))
-            let down = type == .keyDown
-            // Control-Option-Command-Escape always brings the cursor home.
-            let panicFlags: CGEventFlags = [.maskControl, .maskAlternate, .maskCommand]
-            if down, code == 53, event.flags.isSuperset(of: panicFlags) {
+            if KeyCapture.isPanic(code: code, down: type == .keyDown, flags: event.flags.rawValue) {
                 log("panic hotkey")
                 goLocal(at: nil)
                 return true
             }
-            guard case let .remote(name) = focus else {
-                if down { keysDownLocally.insert(code) } else { keysDownLocally.remove(code) }
-                return false
-            }
-            if !down, keysDownLocally.remove(code) != nil { return false }
-            let autorepeat = event.getIntegerValueField(.keyboardEventAutorepeat) != 0
-            server.send(name, .key(Key(code: code, down: down, isModifier: false, autorepeat: autorepeat, flags: event.flags.rawValue)))
-            return true
-
-        case .flagsChanged:
-            let code = UInt16(event.getIntegerValueField(.keyboardEventKeycode))
-            guard let flag = Modifier.flag(forKeyCode: code) else { return false }
-            let down = event.flags.contains(flag) && !modifiersDown.contains(code)
-            if down { modifiersDown.insert(code) } else { modifiersDown.remove(code) }
-            guard case let .remote(name) = focus else {
-                if down { modifiersDownLocally.insert(code) } else { modifiersDownLocally.remove(code) }
-                return false
-            }
-            if !down, modifiersDownLocally.remove(code) != nil { return false }
-            server.send(name, .key(Key(code: code, down: down, isModifier: true, autorepeat: false, flags: event.flags.rawValue)))
+            var target: String?
+            if case let .remote(name) = focus { target = name }
+            guard case let .forward(key) = keyCapture.process(type, event, forwarding: target != nil), let target else { return false }
+            server.send(target, .key(key))
             return true
 
         default:
             return false
         }
+    }
+
+    // MARK: The shared keyboard
+
+    /// A key typed on the shared keyboard while it is attached to a client other than the one
+    /// with the cursor. It goes to whichever machine has the cursor.
+    private func route(_ key: Key, from name: String) {
+        lastForwardedKeyAt = Net.monotonicMillis()
+        if !key.isModifier, !key.autorepeat {
+            if key.down { forwardedKeysDown.insert(key.code) } else { forwardedKeysDown.remove(key.code) }
+        }
+        if KeyCapture.isPanic(code: key.code, down: key.down, flags: key.flags) {
+            log("panic hotkey (from \(name))")
+            return goLocal(at: nil)
+        }
+        switch focus {
+        case .local: injector.key(key)
+        case let .remote(target): server.send(target, .key(key))
+        }
+    }
+
+    private var focusName: String {
+        if case let .remote(name) = focus { return name }
+        return config.name
+    }
+
+    /// The machine the shared keyboard is attached to, if it is attached anywhere.
+    var keyboardOwner: String? {
+        if presence.isPresent { return config.name }
+        return server.peers.values.first { $0.keyboardPresent }?.name
+    }
+
+    var keyboardFollows: Bool { config.keyboardFollows }
+
+    func setKeyboardFollows(_ value: Bool) {
+        config.keyboardFollows = value
+        handoffBlockedUntil = 0
+        saveConfig()
+        log("keyboard follows the cursor: \(value)")
+        onStateChanged?()
+    }
+
+    /// Moves the keyboard to the machine with the cursor once the cursor has settled there and
+    /// the keyboard is idle, so no keystroke is cut off mid-handoff.
+    private func considerHandoff() {
+        let now = Net.monotonicMillis()
+        guard config.keyboardFollows, config.keyboardAddress != nil, handoffInProgress == nil, !paused, now >= handoffBlockedUntil else { return }
+        let target = focusName
+        let lastKeyAt = max(keyCapture.lastActivityAt, lastForwardedKeyAt)
+        guard now - focusSince >= 300, now - lastKeyAt >= 700, !keyCapture.anyKeyDown, forwardedKeysDown.isEmpty else { return }
+        if let owner = keyboardOwner {
+            keyboardMissingSince = nil
+            if owner != target { moveKeyboard(to: target) }
+        } else {
+            // Attached nowhere: give it a moment to show up, then have the cursor's machine claim it.
+            keyboardMissingSince = keyboardMissingSince ?? now
+            if now - keyboardMissingSince! >= 3000 { moveKeyboard(to: target) }
+        }
+    }
+
+    private func keyboard(_ action: KeyboardCommand.Action, on machine: String, completion: @escaping (Bool, String) -> Void) {
+        guard let address = config.keyboardAddress else { return completion(false, "no keyboard configured") }
+        if machine == config.name {
+            mover.perform(KeyboardCommand(id: 0, action: action, address: address, strategy: config.handoffStrategy), completion: completion)
+        } else {
+            server.sendKeyboardCommand(machine, action: action, address: address, strategy: config.handoffStrategy, completion: completion)
+        }
+    }
+
+    /// Hands the keyboard to `target`. If the target cannot take it, the previous owner takes it back.
+    @discardableResult
+    func moveKeyboard(to target: String) -> String {
+        guard config.keyboardAddress != nil else { return "no keyboardAddress in the config" }
+        guard handoffInProgress == nil else { return "a handoff is already in progress" }
+        guard onlineMachines.contains(target) else { return "\(target) is not connected" }
+        let owner = keyboardOwner
+        guard owner != target else { return "the keyboard is already on \(target)" }
+        let startedAt = Net.monotonicMillis()
+        handoffInProgress = (owner, target, startedAt)
+        log("keyboard: \(owner ?? "nowhere") -> \(target) (\(config.handoffStrategy.rawValue))")
+        onStateChanged?()
+
+        let take = { [weak self] in
+            guard let self else { return }
+            self.keyboard(.take, on: target) { ok, detail in
+                let elapsed = Net.monotonicMillis() - startedAt
+                if ok {
+                    self.finishHandoff("moved to \(target) in \(elapsed) ms", blockFor: 0)
+                } else if let owner {
+                    log("keyboard: \(target) could not take it (\(detail)); returning it to \(owner)")
+                    self.keyboard(.take, on: owner) { ok, back in
+                        self.finishHandoff("\(target) failed (\(detail)); \(ok ? "returned to \(owner)" : "could not return it to \(owner): \(back)")", blockFor: 20000)
+                    }
+                } else {
+                    // Probably switched off or out of range; don't keep paging it.
+                    self.finishHandoff("\(target) failed (\(detail))", blockFor: 60000)
+                }
+            }
+        }
+        if let owner {
+            keyboard(.release, on: owner) { ok, detail in
+                if !ok { log("keyboard: \(owner) could not release it (\(detail)); trying to take it anyway") }
+                take()
+            }
+        } else {
+            take()
+        }
+        return "moving the keyboard to \(target)"
+    }
+
+    private func finishHandoff(_ outcome: String, blockFor: UInt64) {
+        handoffInProgress = nil
+        keyboardMissingSince = nil
+        handoffBlockedUntil = Net.monotonicMillis() + blockFor
+        lastHandoff = outcome
+        log("keyboard: \(outcome)")
+        onStateChanged?()
+    }
+
+    func keyboardCommand(_ words: [String]) -> String {
+        switch words.first {
+        case "move":
+            guard words.count == 2 else { return "usage: keyboard move <machine>" }
+            return moveKeyboard(to: words[1])
+        case "follow":
+            guard words.count == 2, ["on", "off"].contains(words[1]) else { return "usage: keyboard follow on|off" }
+            setKeyboardFollows(words[1] == "on")
+        case nil:
+            break
+        default:
+            return "usage: keyboard [move <machine> | follow on|off]"
+        }
+        var report: [String: Any] = [
+            "owner": keyboardOwner ?? "nowhere",
+            "follows": config.keyboardFollows,
+            "strategy": config.handoffStrategy.rawValue,
+            "lastHandoff": lastHandoff,
+            "handoffInProgress": handoffInProgress.map { "\($0.from ?? "nowhere") -> \($0.to)" } ?? "no",
+        ]
+        if let address = config.keyboardAddress { report["here"] = mover.describe(address: address) }
+        return jsonString(report)
     }
 
     // MARK: Control commands
@@ -402,6 +548,7 @@ final class Anchor {
             "accessibility": AXIsProcessTrusted(),
             "inputMonitoring": CGPreflightListenEventAccess(),
             "secureInput": IsSecureEventInputEnabled(),
+            "keyboard": keyboardOwner ?? "nowhere",
             "displays": displays.map { "\($0.name) \(Int($0.frame.width))x\(Int($0.frame.height)) at (\(Int($0.frame.minX)),\(Int($0.frame.minY)))" },
             "peers": peers,
             "layout": placed,

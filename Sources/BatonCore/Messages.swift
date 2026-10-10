@@ -46,11 +46,48 @@ public struct Welcome: Codable, Sendable {
     /// Key for the motion datagrams of this session.
     public var udpKey: Data
     public var udpPort: UInt16
-    public init(anchorName: String, sessionId: UInt32, udpKey: Data, udpPort: UInt16) {
+    /// Bluetooth address of the shared keyboard, if one is configured.
+    public var keyboardAddress: String?
+    public init(anchorName: String, sessionId: UInt32, udpKey: Data, udpPort: UInt16, keyboardAddress: String?) {
         self.anchorName = anchorName
         self.sessionId = sessionId
         self.udpKey = udpKey
         self.udpPort = udpPort
+        self.keyboardAddress = keyboardAddress
+    }
+}
+
+/// How the shared keyboard is moved from one Mac to another.
+public enum HandoffStrategy: String, Codable, Sendable {
+    /// The old Mac drops its connection and the new Mac connects, both keeping their pairing.
+    case reconnect
+    /// The old Mac forgets the keyboard and the new Mac pairs with it afresh.
+    case repair
+}
+
+/// Asks a machine to let go of the shared keyboard or to take it.
+public struct KeyboardCommand: Codable, Sendable {
+    public enum Action: String, Codable, Sendable { case release, take }
+    public var id: UInt32
+    public var action: Action
+    public var address: String
+    public var strategy: HandoffStrategy
+    public init(id: UInt32, action: Action, address: String, strategy: HandoffStrategy) {
+        self.id = id
+        self.action = action
+        self.address = address
+        self.strategy = strategy
+    }
+}
+
+public struct KeyboardResult: Codable, Sendable {
+    public var id: UInt32
+    public var ok: Bool
+    public var detail: String
+    public init(id: UInt32, ok: Bool, detail: String) {
+        self.id = id
+        self.ok = ok
+        self.detail = detail
     }
 }
 
@@ -133,9 +170,15 @@ public enum Message: Codable, Sendable {
     case move(Motion)
     case button(Button)
     case scroll(Scroll)
+    /// Anchor to client: a key to replay. Client to anchor: a key typed on the shared keyboard
+    /// while the cursor is elsewhere, to be passed on to the machine that has it.
     case key(Key)
     case ping(UInt64)
     case pong(UInt64)
+    /// Client to anchor: whether the shared keyboard is attached to the client.
+    case keyboardPresent(Bool)
+    case keyboardCommand(KeyboardCommand)
+    case keyboardResult(KeyboardResult)
 }
 
 public enum Wire {

@@ -25,12 +25,35 @@ final class ClientAgent {
     private var useCachedNext = false
     private var lastFailure = ""
     private var idleCursorWatch: DispatchSourceTimer?
+    private var tap: EventTap!
+    private let keyCapture = KeyCapture()
+    private let presence = KeyboardPresence()
+    private let mover = KeyboardMover()
 
     var onStateChanged: (() -> Void)?
 
     init(config: Config, secret: Data) {
         self.config = config
         self.secret = secret
+        tap = EventTap(types: EventTap.keys) { [unowned self] type, event in self.captured(type, event) }
+    }
+
+    /// While the shared keyboard is attached here but the cursor is on another machine, its
+    /// keystrokes belong to that machine, so they go to the anchor instead of being typed here.
+    private func captured(_ type: CGEventType, _ event: CGEvent) -> Bool {
+        let forwarding = connected && !active && presence.isPresent
+        guard case let .forward(key) = keyCapture.process(type, event, forwarding: forwarding), let link else { return false }
+        link.send(.key(key))
+        return true
+    }
+
+    private func startTapWhenPermitted() {
+        guard !tap.start() else { return log("keyboard tap active") }
+        Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] timer in
+            guard let self, self.tap.start() else { return }
+            timer.invalidate()
+            log("keyboard tap active")
+        }
     }
 
     func start() {
@@ -39,6 +62,11 @@ final class ClientAgent {
             let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
             AXIsProcessTrustedWithOptions(options)
             CGRequestPostEventAccess()
+        }
+        startTapWhenPermitted()
+        presence.onChange = { [weak self] present in
+            self?.link?.send(.keyboardPresent(present))
+            self?.onStateChanged?()
         }
         startBrowser()
         displayWatcher = DisplayWatcher { [weak self] in
@@ -188,7 +216,16 @@ final class ClientAgent {
                 openDatagrams(to: host, welcome)
             }
             hideIdleCursor()
+            presence.watch(address: welcome.keyboardAddress)
+            if welcome.keyboardAddress != nil { mover.requestPermission() }
+            link.send(.keyboardPresent(presence.isPresent))
             onStateChanged?()
+        case let .keyboardCommand(command):
+            log("keyboard: asked to \(command.action.rawValue) (\(command.strategy.rawValue))")
+            mover.perform(command) { [weak self] ok, detail in
+                log("keyboard: \(command.action.rawValue) \(ok ? "succeeded" : "failed"): \(detail)")
+                self?.link?.send(.keyboardResult(KeyboardResult(id: command.id, ok: ok, detail: detail)))
+            }
         case let .ping(sentAt):
             link.send(.pong(sentAt))
         case let .enter(motion):
@@ -261,6 +298,8 @@ final class ClientAgent {
             "postEvents": CGPreflightPostEventAccess(),
             "injected": injector.injected,
             "cursorHidden": CursorVisibility.isHidden,
+            "keyboardTap": tap.isActive,
+            "keyboard": presence.address.map { mover.describe(address: $0) } ?? ["configured": false],
             "datagramsReceived": datagramsReceived,
             "discovered": discovered.map { "\($0)" } ?? "none",
             "displays": currentDisplays().map { "\($0.name) \(Int($0.frame.width))x\(Int($0.frame.height)) at (\(Int($0.frame.minX)),\(Int($0.frame.minY)))" },

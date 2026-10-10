@@ -5,11 +5,20 @@ import Foundation
 final class EventTap {
     typealias Handler = (CGEventType, CGEvent) -> Bool
 
+    static let pointerAndKeys: [CGEventType] = [
+        .mouseMoved, .leftMouseDragged, .rightMouseDragged, .otherMouseDragged,
+        .leftMouseDown, .leftMouseUp, .rightMouseDown, .rightMouseUp, .otherMouseDown, .otherMouseUp,
+        .scrollWheel,
+    ] + keys
+    static let keys: [CGEventType] = [.keyDown, .keyUp, .flagsChanged]
+
     private var port: CFMachPort?
     private var source: CFRunLoopSource?
+    private let types: [CGEventType]
     private let handler: Handler
 
-    init(handler: @escaping Handler) {
+    init(types: [CGEventType], handler: @escaping Handler) {
+        self.types = types
         self.handler = handler
     }
 
@@ -20,17 +29,16 @@ final class EventTap {
     /// Fails until the app has been granted Accessibility and Input Monitoring.
     func start() -> Bool {
         guard port == nil else { return true }
-        let types: [CGEventType] = [
-            .mouseMoved, .leftMouseDragged, .rightMouseDragged, .otherMouseDragged,
-            .leftMouseDown, .leftMouseUp, .rightMouseDown, .rightMouseUp, .otherMouseDown, .otherMouseUp,
-            .scrollWheel, .keyDown, .keyUp, .flagsChanged,
-        ]
         let mask = types.reduce(CGEventMask(0)) { $0 | (CGEventMask(1) << CGEventMask($1.rawValue)) }
         let callback: CGEventTapCallBack = { _, type, event, refcon in
             let tap = Unmanaged<EventTap>.fromOpaque(refcon!).takeUnretainedValue()
             if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
                 log("event tap disabled (\(type.rawValue)), re-enabling")
                 if let port = tap.port { CGEvent.tapEnable(tap: port, enable: true) }
+                return Unmanaged.passUnretained(event)
+            }
+            // Events this app replayed are not input to capture again.
+            if event.getIntegerValueField(.eventSourceUserData) == Injector.marker {
                 return Unmanaged.passUnretained(event)
             }
             return tap.handler(type, event) ? nil : Unmanaged.passUnretained(event)
