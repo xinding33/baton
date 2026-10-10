@@ -189,8 +189,8 @@ leads, and all of them move together:
   the anchor first, and sharing is back a second or two later.
 - A Mac that was asleep or away catches up by itself: when it next reaches the anchor it is told
   which version to fetch, and restarts into it.
-- A Mac that is ahead of the anchor, say after `brew upgrade` on that Mac alone, pulls the anchor
-  and the others up to its release. Versions only ever go up.
+- A Mac that is ahead of the anchor, say because it was updated by hand while the anchor was
+  out of reach, pulls the anchor and the others up to its release. Versions only ever go up.
 
 **Check for Updates…** in the menu bar item looks now, on any Mac, and offers to install what it
 finds on all of them; then a pause in typing is enough for the restart. **Install Updates
