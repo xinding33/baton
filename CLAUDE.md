@@ -28,6 +28,10 @@ The installed Baton is the owner's working mouse and keyboard, all day.
 - **The pasteboard is read and written only on `ClipboardService`'s queue.** A read can wait on the app that made the copy, or on a privacy alert. Clipboard data never goes on the input link either: it has its own connection (`port` + 1), so megabytes cannot hold up the heartbeat.
 - **A new permission prompt on a client can strand it**, since nobody may be at that Mac to answer. Say so in your summary if a change needs one.
 
+## The repo is public
+
+`github.com/xinding33/baton`. Keep the owner's addresses, Bluetooth IDs, host names beyond those already in `scripts/deploy.sh`, and anything from their config or secret out of commits, logs pasted into docs, and PR text. Work on a branch, push it, and open a pull request against `main`; the main checkout merges and deploys.
+
 ## Conventions
 
 - `swift build` and `swift test` must pass. Logic that can be tested without a Mac's hardware lives in `BatonCore` with tests.
