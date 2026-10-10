@@ -61,6 +61,23 @@ Mac still holds the keyboard's pairing, a keyboard that disappears is taken to b
 and is left alone until it comes back. If no connected Mac holds its pairing, it cannot come back
 by itself, so a Mac pairs with it afresh.
 
+## The mouse wheel
+
+With macOS "Natural scrolling" on, Baton reverses notched mouse wheels and leaves trackpads alone,
+so trackpads scroll naturally and wheels scroll the traditional way. It tells the two apart by
+event, not by device: trackpads and the Magic Mouse send continuous scroll events, wheels send
+discrete ones. A mouse that sends continuous events, such as a Logitech set to smooth scrolling in
+Logi Options+, is treated as a trackpad.
+
+Each Mac reverses the scrolls that land on it, whether they come from the shared mouse or from a
+mouse plugged into that Mac, and has its own **Reverse Mouse Wheel** switch in the menu bar item,
+with **Vertical** and **Horizontal** under it. The choice is kept in `scroll.json` next to the
+config.
+
+Baton takes over from [Backspin](https://github.com/xinding33/backspin). While Backspin or
+ScrollFlip is running on a Mac, Baton does not reverse there, since two reversals cancel out, and
+the menu says so. Quit the other app and Baton starts reversing at once.
+
 ## Build and install
 
 ```sh
@@ -84,6 +101,9 @@ System Settings → Privacy & Security:
 - `Baton ctl status` prints the agent's state; `Baton ctl home|pause|resume` control it.
 - `Baton ctl keyboard` shows where the keyboard is; `keyboard move <machine>` hands it over and
   `keyboard follow on|off` switches following.
+- `Baton ctl scroll` shows whether this Mac reverses the wheel, and what the last scroll event was
+  and what became of it; `scroll on|off`, `scroll vertical on|off` and `scroll horizontal on|off`
+  change it.
 - `Baton ctl arrange show` opens the arrangement window.
 - `Baton ctl sim move <dx> <dy>` (also `enter`, `click`, `key`, `scroll`) feeds synthetic input
   through the anchor, for testing without touching the mouse. On a client, `sim local` stands in
