@@ -327,6 +327,8 @@ final class ClientAgent {
             if active { injector.key(key) }
         case let .displayAction(action):
             onDisplayAction?(action)
+        case let .wake(request):
+            WakeTogether.shared.received(request, from: anchorName)
         default:
             break
         }
@@ -409,4 +411,16 @@ final class ClientAgent {
     }
 
     var isConnected: Bool { connected }
+}
+
+/// The link to the anchor, as wake-together uses it (WakeTogether.swift).
+extension ClientAgent: WakeLinks {
+    var wakeLinks: [WakeLink] {
+        guard connected, let codec else { return [] }
+        return [WakeLink(name: anchorName, session: UInt64(codec.sessionId))]
+    }
+
+    func sendWake(_ request: WakeRequest, to link: WakeLink) {
+        self.link?.send(.wake(request))
+    }
 }

@@ -27,9 +27,9 @@ final class Injector {
         CGMouseButton(rawValue: UInt32(number)) ?? .center
     }
 
-    func wake() {
+    func wake(_ reason: String = "Baton cursor arrived") {
         var assertion: IOPMAssertionID = 0
-        IOPMAssertionDeclareUserActivity("Baton cursor arrived" as CFString, kIOPMUserActiveLocal, &assertion)
+        IOPMAssertionDeclareUserActivity(reason as CFString, kIOPMUserActiveLocal, &assertion)
     }
 
     /// The cursor was moved by something else; later moves are measured from where it is now.

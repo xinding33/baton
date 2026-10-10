@@ -104,6 +104,27 @@ remembered there.
 A display that is off is not part of the cursor layout. If the cursor is on a display when it
 is turned off, it moves to one that is left.
 
+## Waking together
+
+When one Mac's display wakes, Baton wakes the displays of the others. The wake travels over
+Baton's own link: a client tells the anchor, which wakes its own display and tells the other
+clients. A Mac woken this way does not pass the wake on again. **Wake All Macs** in the menu bar
+item, or ⌃⌥⌘W on any Mac, does the same on request.
+
+Only a Mac whose system is awake can be woken, since a sleeping Mac has no link. **Keep This Mac
+Awake** holds off idle system sleep for that reason; the display still sleeps on schedule. With
+**Only on Power Adapter** on, a MacBook on battery sleeps as usual and is out of reach until it
+wakes by itself.
+
+Each Mac has its own switches in the menu bar item: **Wake Others When This Mac Wakes**, **Keep
+This Mac Awake** and **Only on Power Adapter**. They are kept in `wake.json` next to the config,
+along with the hotkey (`"hotKey": null` for none; restart the agent after editing the file).
+
+Baton takes over from [Ripple](https://github.com/xinding33/ripple), and a Mac's first run copies
+the three switches from Ripple's settings on that Mac. While Ripple is running on a Mac, Baton
+leaves waking, the hotkey and keeping awake to it there, and the menu says so; the anchor still
+passes other Macs' wakes along. Quit Ripple and Baton takes over at once.
+
 ## Build and install
 
 ```sh
@@ -123,6 +144,7 @@ System Settings → Privacy & Security:
 ## Controls
 
 - **⌃⌥⌘⎋** brings the cursor back to the anchor.
+- **⌃⌥⌘W** wakes every Mac's display.
 - The menu bar item (⇄) shows where the cursor is and can pause sharing.
 - `Baton ctl status` prints the agent's state; `Baton ctl home|pause|resume` control it.
 - `Baton ctl keyboard` shows where the keyboard is; `keyboard move <machine>` hands it over and
@@ -130,6 +152,9 @@ System Settings → Privacy & Security:
 - `Baton ctl scroll` shows whether this Mac reverses the wheel, and what the last scroll event was
   and what became of it; `scroll on|off`, `scroll vertical on|off` and `scroll horizontal on|off`
   change it.
+- `Baton ctl wake` shows this Mac's wake settings, the Macs it can reach and what it last did;
+  `wake all` wakes every Mac, and `wake others on|off`, `wake keep on|off` and
+  `wake adapter-only on|off` change the settings.
 - `Baton ctl arrange show` opens the arrangement window.
 - `Baton ctl displays` prints each Mac's displays as the menu shows them; `displays off <name>`,
   `displays on <name>` and `displays on all` switch this Mac's, and with a machine's name first
