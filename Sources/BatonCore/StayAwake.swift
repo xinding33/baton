@@ -66,3 +66,25 @@ public struct StayAwakeConditions: Equatable, Sendable {
         return nil
     }
 }
+
+/// How long a report from another Mac holds the screen saver off here. Counting the report as
+/// activity restarts the display's sleep timer and leaves the screen saver's alone: that one runs
+/// from the last input at this Mac, and on a Mac that asks for its password at once the screen
+/// saver starting is the lock. So each report also holds the screen saver off for as long as this
+/// Mac's own settings would have, and the time runs from the last input at any of the Macs.
+public enum ScreenSaverHold {
+    /// When a Mac starts its screen saver if that has never been set.
+    public static let usualScreenSaverSeconds = 1200
+
+    /// Seconds from a report, or nil when there is nothing to hold off. `screenSaverAfter` is in
+    /// seconds, nil when never set and 0 for never; `displaySleepsAfterMinutes` is nil when
+    /// unknown and 0 for never.
+    public static func seconds(screenSaverAfter: Int?, displaySleepsAfterMinutes: Int?) -> Int? {
+        let screenSaver = screenSaverAfter ?? usualScreenSaverSeconds
+        guard screenSaver > 0 else { return nil }
+        // The hold keeps the display on as well, so it ends no later than the display would have
+        // slept. A short pause must not end it either: reports stop while you read.
+        guard let minutes = displaySleepsAfterMinutes, minutes > 0 else { return screenSaver }
+        return min(screenSaver, minutes * 60)
+    }
+}
