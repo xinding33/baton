@@ -43,6 +43,11 @@ final class ClientAgent {
     var onDisplayAction: ((DisplayAction) -> Void)?
     /// The anchor's address once it has welcomed this Mac, nil when the connection is gone.
     var onAnchorChanged: ((NWEndpoint.Host?) -> Void)?
+    /// The anchor's address as soon as it answers at all, even if it then refuses this Mac for
+    /// being on another version. The update link goes there (Updates.swift).
+    var onAnchorReached: ((NWEndpoint.Host) -> Void)?
+    /// A Bluetooth step is running here. Restarting now could leave the keyboard paired with no Mac.
+    var keyboardBusy: Bool { mover.isBusy }
 
     init(config: Config, secret: Data) {
         self.config = config
@@ -203,6 +208,7 @@ final class ClientAgent {
         link.onReady = { [weak self, weak link] in
             guard let self, let link, self.link === link else { return }
             self.lastHeardAt = Net.monotonicMillis()
+            if let host = link.remoteHost { self.onAnchorReached?(host) }
             link.send(.hello(Hello(name: self.config.name, version: batonProtocolVersion, displays: currentDisplays())))
         }
         link.onMessage = { [weak self, weak link] message in
