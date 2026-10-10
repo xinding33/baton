@@ -60,7 +60,8 @@ final class SetupView: NSView, NSTextFieldDelegate {
         case cancel
     }
 
-    static let width: CGFloat = 580
+    /// Every pane of Settings is this wide, so the window keeps its width from one to the next.
+    static let width: CGFloat = 720
     private static let inset: CGFloat = 24
     private static let contentWidth = width - 2 * inset
     private static let buttonWidth: CGFloat = 130

@@ -195,33 +195,25 @@ final class SettingsWindowTests: XCTestCase {
         facts.canWakeAll = true
         facts.wakeHotKey = "⌃⌥⌘W"
         facts.attention = [.init(summary: "mini has no place yet", detail: "Drag it.", pane: StatusMenu.Pane.arrange)]
-        facts.displaysOff = [.init(machine: nil, uuid: "A", name: "LG UltraFine")]
         var chosen: [String] = []
         let menu = MenuBarMenu.make(StatusMenu.items(facts)) { chosen.append("\($0)") }
         let items = menu.items.filter { !$0.isSeparatorItem }
         XCTAssertEqual(items.map(\.title), [
-            "⚠︎ mini has no place yet", "Connected: mini", "Bring Cursor Home (⌃⌥⌘⎋)", "Pause Sharing", "Keyboard: studio", "Wake All Macs (⌃⌥⌘W)",
-            "Reconnect LG UltraFine", "Settings…", "Quit Baton",
+            "⚠︎ mini has no place yet", "Connected: mini", "Pause Sharing", "Bring Cursor Home (⌃⌥⌘⎋)", "Keyboard: studio", "Wake All Macs (⌃⌥⌘W)",
+            "Settings…", "Quit Baton",
         ])
         XCTAssertNil(items[1].action, "a line to read")
         XCTAssertEqual(items[4].submenu?.items.map(\.title), ["Move to", "mini"])
 
-        for item in [items[0], items[2], items[3], items[6], items[7]] + (items[4].submenu?.items.suffix(1) ?? []) {
+        for item in [items[0], items[2], items[3], items[6]] + (items[4].submenu?.items.suffix(1) ?? []) {
             _ = item.target?.perform(try XCTUnwrap(item.action))
         }
-        XCTAssertEqual(chosen.count, 6)
+        XCTAssertEqual(chosen.count, 5)
         XCTAssertEqual(chosen[0], "settings(pane: Optional(\"arrange\"))")
-        XCTAssertEqual(chosen[1], "home")
-        XCTAssertEqual(chosen[2], "setPaused(true)")
-        XCTAssertTrue(chosen[3].hasPrefix("reconnect("))
-        XCTAssertEqual(chosen[4], "settings(pane: nil)")
-        XCTAssertEqual(chosen[5], "moveKeyboard(to: \"mini\")")
-
-        // Several displays off share one item.
-        facts.displaysOff.append(.init(machine: "mini", uuid: "B", name: "DELL"))
-        let again = MenuBarMenu.make(StatusMenu.items(facts)) { _ in }
-        let reconnect = try XCTUnwrap(again.items.first { $0.title == "Reconnect Display" })
-        XCTAssertEqual(reconnect.submenu?.items.filter { !$0.isSeparatorItem }.map(\.title), ["LG UltraFine", "DELL on mini", "All"])
+        XCTAssertEqual(chosen[1], "setPaused(true)")
+        XCTAssertEqual(chosen[2], "home")
+        XCTAssertEqual(chosen[3], "settings(pane: nil)")
+        XCTAssertEqual(chosen[4], "moveKeyboard(to: \"mini\")")
     }
 
     // MARK: Every pane
@@ -295,6 +287,7 @@ final class SettingsWindowTests: XCTestCase {
         let board = NSPasteboard(name: NSPasteboard.Name("baton-test-\(UUID().uuidString)"))
         defer { board.releaseGlobally() }
         let clipboard = SharedClipboard(config: studio.currentConfig, secret: Data(repeating: 0x5a, count: 32), pasteboard: board, universalClipboard: { false })
+        keyboard.clipboardRows = { clipboard.settingsRows() }
         let updates = Updates()
         let displays = DisplayPanel(rows: [
             DisplayRow(uuid: "A", name: "Studio Display", state: .on, staysOn: "The last active screen stays on."),
@@ -302,15 +295,14 @@ final class SettingsWindowTests: XCTestCase {
         ])
         let panes: [SettingsPane] = [
             general,
-            ArrangementPane(anchor: studio),
-            keyboard.pane,
             FormPane(id: StatusMenu.Pane.mouse, title: "Mouse", symbol: "computermouse") { ScrollReverser.rows(for: ScrollSettings(), tapActive: true) { _ in } },
+            keyboard.pane,
             FormPane(id: StatusMenu.Pane.displays, title: "Displays", symbol: "display") {
                 [.header("This Mac")] + DisplayMenu.rows(for: displays) { _ in }
                     + [.header("mini")] + DisplayMenu.rows(for: DisplayPanel(rows: [DisplayRow(uuid: "C", name: "DELL U2723QE", state: .on)])) { _ in }
             },
+            ArrangementPane(anchor: studio),
             FormPane(id: StatusMenu.Pane.wake, title: "Sleep & Wake", symbol: "moon") { WakeTogether.rows(for: WakeSettings(), holdingAwake: true, onPowerAdapter: true) { _, _ in } },
-            clipboard.settingsPane,
             updates.settingsPane,
         ]
 
@@ -325,6 +317,7 @@ final class SettingsWindowTests: XCTestCase {
             let window = try XCTUnwrap(presented)
             XCTAssertTrue(window.contentView === pane.view)
             XCTAssertEqual(window.contentLayoutRect.size.height, pane.view.fittingSize.height, accuracy: 1, "\(pane.id) fills the window")
+            XCTAssertEqual(window.frame.width, SetupView.width, accuracy: 1, "\(pane.id) leaves the window as wide as the others")
             XCTAssertNotNil(NSImage(systemSymbolName: pane.symbol, accessibilityDescription: nil), "\(pane.symbol) is a symbol this macOS has")
             // The frame view draws the title bar and the toolbar as well as the pane.
             let frame = try XCTUnwrap(window.contentView?.superview)
@@ -333,7 +326,8 @@ final class SettingsWindowTests: XCTestCase {
             frame.cacheDisplay(in: frame.bounds, to: bitmap)
             try XCTUnwrap(bitmap.representation(using: .png, properties: [:])).write(to: folder.appendingPathComponent("3\(index)-window-\(pane.id).png"))
         }
-        XCTAssertEqual(presented?.toolbar?.items.map(\.label), ["General", "Arrange", "Keyboard", "Mouse", "Displays", "Sleep & Wake", "Clipboard", "Updates"])
+        XCTAssertEqual(presented?.toolbar?.items.map(\.label), ["General", "Mouse", "Keyboard", "Displays", "Arrange", "Sleep & Wake", "Updates"])
+        XCTAssertEqual(keyboard.pane.rows.filter { $0.kind == .header }.map(\.title), ["Shared keyboard", "Moving between Macs", "Shared clipboard"])
         presented?.close()
     }
 

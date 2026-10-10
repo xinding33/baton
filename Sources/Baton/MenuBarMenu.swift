@@ -9,7 +9,6 @@ enum MenuBarMenu {
         case setPaused(Bool)
         case moveKeyboard(to: String)
         case wakeAll
-        case reconnect([StatusMenu.DisplayOff])
         /// Opens Settings, on a pane or on the one it showed last.
         case settings(pane: String?)
         case quit
@@ -60,16 +59,6 @@ enum MenuBarMenu {
             entry.submenu = submenu
         case let .wakeAll(hotKey):
             add("Wake All Macs" + (hotKey.map { " (\($0))" } ?? ""), .wakeAll, to: menu, perform: perform)
-        case let .reconnect(displays):
-            if displays.count == 1, let display = displays.first {
-                add("Reconnect \(display.title)", .reconnect([display]), to: menu, perform: perform)
-            } else {
-                let submenu = NSMenu()
-                for display in displays { add(display.title, .reconnect([display]), to: submenu, perform: perform) }
-                submenu.addItem(.separator())
-                add("All", .reconnect(displays), to: submenu, perform: perform)
-                add("Reconnect Display", to: menu, perform: perform).submenu = submenu
-            }
         case let .notice(text, pane):
             add(text, .settings(pane: pane), to: menu, perform: perform)
         case .settings:

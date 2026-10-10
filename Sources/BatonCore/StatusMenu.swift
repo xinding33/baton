@@ -18,21 +18,6 @@ public enum StatusMenu {
         }
     }
 
-    /// A display Baton has turned off, on this Mac or, for the anchor, on `machine`.
-    public struct DisplayOff: Equatable, Sendable {
-        public var machine: String?
-        public var uuid: String
-        public var name: String
-
-        public init(machine: String?, uuid: String, name: String) {
-            self.machine = machine
-            self.uuid = uuid
-            self.name = name
-        }
-
-        public var title: String { machine.map { "\(name) on \($0)" } ?? name }
-    }
-
     public struct Facts: Equatable, Sendable {
         public var role: Role
 
@@ -57,7 +42,6 @@ public enum StatusMenu {
         /// Whether Wake All Macs can be offered, and its hotkey.
         public var canWakeAll = false
         public var wakeHotKey: String?
-        public var displaysOff: [DisplayOff] = []
         /// What the updater is doing, or which Mac is on another version.
         public var update: String?
 
@@ -74,8 +58,6 @@ public enum StatusMenu {
         /// Where the shared keyboard is, and the Macs it can be moved to.
         case keyboard(owner: String?, destinations: [String])
         case wakeAll(hotKey: String?)
-        /// Shown only while a display is off.
-        case reconnect([DisplayOff])
         /// A line that opens a pane of Settings, e.g. while an update installs.
         case notice(String, pane: String)
         case settings
@@ -116,8 +98,8 @@ public enum StatusMenu {
         switch facts.role {
         case .anchor:
             main.append(.status(facts.peers.isEmpty ? "No other Macs connected" : "Connected: \(facts.peers.sorted().joined(separator: ", "))"))
-            main.append(.home)
             main.append(.pause(resume: facts.paused))
+            main.append(.home)
             if facts.sharesKeyboard {
                 main.append(.keyboard(owner: facts.keyboardOwner, destinations: facts.online.filter { $0 != facts.keyboardOwner }.sorted()))
             }
@@ -127,10 +109,7 @@ public enum StatusMenu {
         if facts.canWakeAll { main.append(.wakeAll(hotKey: facts.wakeHotKey)) }
         sections.append(main)
 
-        var passing: [Item] = []
-        if !facts.displaysOff.isEmpty { passing.append(.reconnect(facts.displaysOff)) }
-        if let update = facts.update { passing.append(.notice(update, pane: Pane.updates)) }
-        sections.append(passing)
+        sections.append(facts.update.map { [.notice($0, pane: Pane.updates)] } ?? [])
 
         sections.append([.settings, .quit])
         return Array(sections.filter { !$0.isEmpty }.joined(separator: [.separator]))

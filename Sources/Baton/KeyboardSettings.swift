@@ -3,7 +3,7 @@ import BatonCore
 import CoreBluetooth
 
 /// The Keyboard pane of the anchor's Settings: which Bluetooth keyboard the Macs share, and how
-/// it gets from one to the other.
+/// it gets from one to the other. The shared clipboard's rows come after the keyboard's.
 final class KeyboardSettings {
     private let anchor: Anchor
 
@@ -20,6 +20,8 @@ final class KeyboardSettings {
     private var failure: String?
     /// What the pane shows has changed.
     var onStateChanged: (() -> Void)?
+    /// The shared clipboard's rows, which end the pane.
+    var clipboardRows: () -> [SettingsRow] = { [] }
 
     init(anchor: Anchor) {
         self.anchor = anchor
@@ -31,7 +33,7 @@ final class KeyboardSettings {
     }
 
     private(set) lazy var pane: FormPane = {
-        let pane = FormPane(id: StatusMenu.Pane.keyboard, title: "Keyboard", symbol: "keyboard") { [unowned self] in self.rows() }
+        let pane = FormPane(id: StatusMenu.Pane.keyboard, title: "Keyboard", symbol: "keyboard") { [unowned self] in self.rows() + self.clipboardRows() }
         // A choice that was not applied does not survive closing the window.
         pane.onOpen = { [unowned self] in
             self.picked = self.saved
