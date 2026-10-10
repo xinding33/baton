@@ -13,10 +13,7 @@ final class ScrollReverser: NSObject {
     private static var settingsFile: URL { Paths.support.appendingPathComponent("scroll.json") }
 
     private(set) var settings = ScrollSettings()
-    /// Another app reversing the wheel on this Mac right now.
-    private(set) var rival: ScrollRival?
     private var tap: EventTap!
-    private var appsObservation: NSKeyValueObservation?
     private var forwarding: () -> Bool = { false }
     private var counts: [String: Int] = [:]
     private var lastEvent: [String: Any] = [:]
@@ -39,17 +36,7 @@ final class ScrollReverser: NSObject {
             settings = saved
         }
         log("scroll: reversing the wheel is \(settings.enabled ? "on" : "off") (vertical \(settings.vertical), horizontal \(settings.horizontal))")
-        watchRivals()
         startTapWhenPermitted()
-    }
-
-    /// Keeps `rival` current. Menu bar apps such as Backspin post no launch or quit notification;
-    /// observing the list of running apps, which changes on the main run loop, is the only way
-    /// to hear of them.
-    func watchRivals() {
-        appsObservation = NSWorkspace.shared.observe(\.runningApplications, options: [.initial]) { [weak self] workspace, _ in
-            self?.update(rival: ScrollRival.running(among: workspace.runningApplications.compactMap(\.bundleIdentifier)))
-        }
     }
 
     private func startTapWhenPermitted() {
@@ -62,13 +49,6 @@ final class ScrollReverser: NSObject {
         }
     }
 
-    private func update(rival now: ScrollRival?) {
-        guard now != rival else { return }
-        rival = now
-        log(now.map { "scroll: \($0.rawValue) is running; leaving the wheel to it" } ?? "scroll: no other app is reversing the wheel; Baton reverses it")
-        onStateChanged?()
-    }
-
     // MARK: Scroll events
 
     /// A scroll made on this Mac, on its way to the window server.
@@ -76,7 +56,7 @@ final class ScrollReverser: NSObject {
         // The Mac these are forwarded to reverses them.
         guard !forwarding() else { return }
         let continuous = event.getIntegerValueField(.scrollWheelEventIsContinuous) != 0
-        let axes = settings.axes(continuous: continuous, rival: rival)
+        let axes = settings.axes(continuous: continuous)
         record("local", reversed: axes != nil, [
             "continuous": continuous,
             "lines": [event.getIntegerValueField(.scrollWheelEventDeltaAxis1), event.getIntegerValueField(.scrollWheelEventDeltaAxis2)],
@@ -89,7 +69,7 @@ final class ScrollReverser: NSObject {
 
     /// A scroll the anchor forwarded, as this Mac should replay it.
     func arriving(_ scroll: Scroll) -> Scroll {
-        let axes = settings.axes(continuous: scroll.continuous, rival: rival)
+        let axes = settings.axes(continuous: scroll.continuous)
         record("forwarded", reversed: axes != nil, [
             "continuous": scroll.continuous,
             "lines": [scroll.lines1, scroll.lines2],
@@ -136,7 +116,7 @@ final class ScrollReverser: NSObject {
             item.state = on ? .on : .off
             item.indentationLevel = level
         }
-        if let note = settings.note(rival: rival, tapActive: tap.isActive) {
+        if let note = settings.note(tapActive: tap.isActive) {
             menu.addItem(withTitle: note, action: nil, keyEquivalent: "")
         }
     }
@@ -164,8 +144,7 @@ final class ScrollReverser: NSObject {
             "enabled": settings.enabled,
             "vertical": settings.vertical,
             "horizontal": settings.horizontal,
-            "reversing": settings.axes(continuous: false, rival: rival) != nil,
-            "standingDownFor": rival?.rawValue ?? "nothing",
+            "reversing": settings.axes(continuous: false) != nil,
             "tapActive": tap.isActive,
             "counts": counts,
             "lastEvent": lastEvent,

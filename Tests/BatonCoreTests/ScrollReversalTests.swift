@@ -51,44 +51,24 @@ final class ScrollReversalTests: XCTestCase {
 
     func testReversesWheelsAndLeavesTrackpadsAlone() {
         let settings = ScrollSettings()
-        XCTAssertEqual(settings.axes(continuous: false, rival: nil), both)
-        XCTAssertNil(settings.axes(continuous: true, rival: nil))
+        XCTAssertEqual(settings.axes(continuous: false), both)
+        XCTAssertNil(settings.axes(continuous: true))
     }
 
     func testReversesOnlyTheChosenAxes() {
-        XCTAssertEqual(ScrollSettings(horizontal: false).axes(continuous: false, rival: nil), ScrollAxes(vertical: true, horizontal: false))
-        XCTAssertEqual(ScrollSettings(vertical: false).axes(continuous: false, rival: nil), ScrollAxes(vertical: false, horizontal: true))
-        XCTAssertNil(ScrollSettings(vertical: false, horizontal: false).axes(continuous: false, rival: nil))
+        XCTAssertEqual(ScrollSettings(horizontal: false).axes(continuous: false), ScrollAxes(vertical: true, horizontal: false))
+        XCTAssertEqual(ScrollSettings(vertical: false).axes(continuous: false), ScrollAxes(vertical: false, horizontal: true))
+        XCTAssertNil(ScrollSettings(vertical: false, horizontal: false).axes(continuous: false))
     }
 
     func testReversesNothingWhenSwitchedOff() {
-        XCTAssertNil(ScrollSettings(enabled: false).axes(continuous: false, rival: nil))
+        XCTAssertNil(ScrollSettings(enabled: false).axes(continuous: false))
     }
 
-    func testStandsDownWhileAnotherReverserRuns() {
-        for rival in ScrollRival.allCases {
-            XCTAssertNil(ScrollSettings().axes(continuous: false, rival: rival), rival.rawValue)
-        }
-    }
-
-    func testFindsBackspinAndScrollFlipAmongRunningApps() {
-        let others = ["com.apple.finder", "com.xinding.baton"]
-        XCTAssertNil(ScrollRival.running(among: others))
-        XCTAssertNil(ScrollRival.running(among: [String]()))
-        XCTAssertEqual(ScrollRival.running(among: others + ["io.github.xinding33.backspin"]), .backspin)
-        XCTAssertEqual(ScrollRival.running(among: ["io.github.xinding33.scrollflip"] + others), .scrollFlip)
-        XCTAssertEqual(ScrollRival.running(among: ["io.github.xinding33.ScrollFlip"]), .scrollFlip)
-        XCTAssertNil(ScrollRival.running(among: ["io.github.xinding33.backspin.helper"]))
-    }
-
-    func testMenuSaysWhyTheWheelIsNotReversed() {
-        XCTAssertNil(ScrollSettings().note(rival: nil, tapActive: true))
-        XCTAssertEqual(ScrollSettings().note(rival: .backspin, tapActive: true), "Backspin is running, so Baton leaves the wheel to it")
-        XCTAssertEqual(ScrollSettings().note(rival: .scrollFlip, tapActive: false), "ScrollFlip is running, so Baton leaves the wheel to it")
-        // The other app reverses the wheel whatever Baton's own switch says.
-        XCTAssertNotNil(ScrollSettings(enabled: false).note(rival: .backspin, tapActive: true))
-        XCTAssertEqual(ScrollSettings().note(rival: nil, tapActive: false), "Needs Accessibility to reverse a mouse plugged into this Mac")
-        XCTAssertNil(ScrollSettings(enabled: false).note(rival: nil, tapActive: false))
+    func testMenuSaysWhenTheTapIsMissing() {
+        XCTAssertNil(ScrollSettings().note(tapActive: true))
+        XCTAssertEqual(ScrollSettings().note(tapActive: false), "Needs Accessibility to reverse a mouse plugged into this Mac")
+        XCTAssertNil(ScrollSettings(enabled: false).note(tapActive: false))
     }
 
     func testSettingsDefaultToReversingBothAxes() throws {
@@ -116,7 +96,6 @@ final class ScrollReversalTests: XCTestCase {
     }
 
     func testReversingTwiceRestoresTheEvent() {
-        // Why Baton must not reverse alongside Backspin.
         let event = fastNotch.makeEvent(source: nil)!
         both.reverse(event)
         both.reverse(event)

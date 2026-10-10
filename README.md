@@ -74,9 +74,8 @@ mouse plugged into that Mac, and has its own **Reverse Mouse Wheel** switch in t
 with **Vertical** and **Horizontal** under it. The choice is kept in `scroll.json` next to the
 config.
 
-Baton takes over from [Backspin](https://github.com/xinding33/backspin). While Backspin or
-ScrollFlip is running on a Mac, Baton does not reverse there, since two reversals cancel out, and
-the menu says so. Quit the other app and Baton starts reversing at once.
+Baton takes over from [Backspin](https://github.com/xinding33/backspin). Do not run the two on the
+same Mac: two reversals cancel out.
 
 ## Build and install
 

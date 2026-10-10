@@ -23,37 +23,15 @@ public struct ScrollSettings: Codable, Equatable, Sendable {
 
     /// The axes to reverse on one scroll event, or nil to leave it as it is. Trackpads and the
     /// Magic Mouse send continuous events and notched wheels discrete ones, which is how the two
-    /// are told apart. `rival` is another app reversing the wheel on this Mac: reversing as well
-    /// would undo its work.
-    public func axes(continuous: Bool, rival: ScrollRival?) -> ScrollAxes? {
-        guard enabled, !continuous, rival == nil, vertical || horizontal else { return nil }
+    /// are told apart.
+    public func axes(continuous: Bool) -> ScrollAxes? {
+        guard enabled, !continuous, vertical || horizontal else { return nil }
         return ScrollAxes(vertical: vertical, horizontal: horizontal)
     }
 
     /// What the menu says when the wheel is not being reversed the way the checkmarks suggest.
-    public func note(rival: ScrollRival?, tapActive: Bool) -> String? {
-        if let rival { return "\(rival.rawValue) is running, so Baton leaves the wheel to it" }
-        if enabled, !tapActive { return "Needs Accessibility to reverse a mouse plugged into this Mac" }
-        return nil
-    }
-}
-
-/// Another app that reverses the wheel. While one runs on a Mac, Baton does not reverse there.
-public enum ScrollRival: String, CaseIterable, Sendable {
-    case backspin = "Backspin"
-    /// What Backspin was called before version 1.3.0.
-    case scrollFlip = "ScrollFlip"
-
-    public var bundleID: String {
-        switch self {
-        case .backspin: return "io.github.xinding33.backspin"
-        case .scrollFlip: return "io.github.xinding33.scrollflip"
-        }
-    }
-
-    public static func running(among bundleIDs: some Sequence<String>) -> ScrollRival? {
-        let running = Set(bundleIDs.map { $0.lowercased() })
-        return allCases.first { running.contains($0.bundleID) }
+    public func note(tapActive: Bool) -> String? {
+        enabled && !tapActive ? "Needs Accessibility to reverse a mouse plugged into this Mac" : nil
     }
 }
 
