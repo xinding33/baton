@@ -423,6 +423,13 @@ final class Anchor {
         }
     }
 
+    /// Whether a key forwarded by a client is still held there. A held key repeats, so one whose
+    /// release never arrived stops counting once nothing has been heard of it for a while.
+    private var forwardedKeyHeld: Bool {
+        if !forwardedKeysDown.isEmpty, Net.monotonicMillis() - lastForwardedKeyAt > 3000 { forwardedKeysDown = [] }
+        return !forwardedKeysDown.isEmpty
+    }
+
     private var focusName: String {
         if case let .remote(name) = focus { return name }
         return config.name
@@ -464,7 +471,7 @@ final class Anchor {
         let target = focusName
         let lastKeyAt = max(keyCapture.lastActivityAt, lastForwardedKeyAt)
         guard config.keyboardFollows, !paused, owner != target, now - focusSince >= 1000, now - lastKeyAt >= 1500,
-              now - lastPointerActivityAt <= 400, !keyCapture.anyKeyDown, forwardedKeysDown.isEmpty else { return }
+              now - lastPointerActivityAt <= 400, !keyCapture.anyKeyDown, !forwardedKeyHeld else { return }
         moveKeyboard(to: target)
     }
 
@@ -534,7 +541,7 @@ final class Anchor {
         let now = Net.monotonicMillis()
         return RestartConditions(
             handoffInProgress: handoffInProgress != nil || mover.isBusy,
-            keysDown: keyCapture.anyKeyDown || !forwardedKeysDown.isEmpty,
+            keysDown: keyCapture.anyKeyDown || forwardedKeyHeld,
             buttonsDown: !buttonsDown.isEmpty,
             msSinceKey: now - max(keyCapture.lastActivityAt, lastForwardedKeyAt),
             msSincePointer: now - lastPointerActivityAt

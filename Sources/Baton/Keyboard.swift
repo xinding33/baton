@@ -345,7 +345,14 @@ final class KeyCapture {
     private var modifiersDown: Set<UInt16> = []
     private(set) var lastActivityAt: UInt64 = 0
 
-    var anyKeyDown: Bool { !keysDown.isEmpty || !modifiersDown.isEmpty }
+    /// Whether a key on this Mac's keyboards is held. A release can go unseen, for instance when
+    /// a password field takes the keyboard away from every tap between press and release, so
+    /// what the tap remembers is checked against what the system says is down.
+    var anyKeyDown: Bool {
+        keysDown = keysDown.filter { CGEventSource.keyState(.hidSystemState, key: $0) }
+        modifiersDown = modifiersDown.filter { CGEventSource.keyState(.hidSystemState, key: $0) }
+        return !keysDown.isEmpty || !modifiersDown.isEmpty
+    }
 
     func process(_ type: CGEventType, _ event: CGEvent, forwarding: Bool) -> Outcome {
         let code = UInt16(event.getIntegerValueField(.keyboardEventKeycode))
