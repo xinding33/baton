@@ -22,8 +22,8 @@ final class StatusMenuTests: XCTestCase {
     func testTheAnchorsMenuHasSevenItemsOnAnOrdinaryDay() {
         XCTAssertEqual(StatusMenu.items(anchor), [
             .status("Connected: mbp, mini"),
-            .home,
             .pause(resume: false),
+            .home,
             .keyboard(owner: "studio", destinations: ["mbp", "mini"]),
             .wakeAll(hotKey: "⌃⌥⌘W"),
             .separator,
@@ -47,7 +47,7 @@ final class StatusMenuTests: XCTestCase {
         facts.sharesKeyboard = false
         facts.canWakeAll = false
         facts.peers = []
-        XCTAssertEqual(entries(facts), [.status("No other Macs connected"), .home, .pause(resume: false), .settings, .quit])
+        XCTAssertEqual(entries(facts), [.status("No other Macs connected"), .pause(resume: false), .home, .settings, .quit])
     }
 
     func testTheKeyboardCanGoToEveryMacButTheOneThatHasIt() {
@@ -61,34 +61,27 @@ final class StatusMenuTests: XCTestCase {
     func testWhatNeedsAttentionComesFirstAndPassingThingsOnlyWhileTheyLast() {
         var facts = anchor
         let accessibility = StatusMenu.Attention(summary: "Accessibility is not allowed yet", detail: "…", pane: StatusMenu.Pane.general)
-        let display = StatusMenu.DisplayOff(machine: nil, uuid: "A", name: "LG UltraFine")
         facts.attention = [accessibility]
-        facts.displaysOff = [display]
         facts.update = "Installing Baton 1.4.0…"
         facts.paused = true
         XCTAssertEqual(StatusMenu.items(facts), [
             .attention(accessibility),
             .separator,
             .status("Connected: mbp, mini"),
-            .home,
             .pause(resume: true),
+            .home,
             .keyboard(owner: "studio", destinations: ["mbp", "mini"]),
             .wakeAll(hotKey: "⌃⌥⌘W"),
             .separator,
-            .reconnect([display]),
             .notice("Installing Baton 1.4.0…", pane: StatusMenu.Pane.updates),
             .separator,
             .settings,
             .quit,
         ])
         // One thing wrong and one thing passing still leaves the menu under ten.
-        facts.update = nil
         XCTAssertEqual(entries(facts).count, 9)
-    }
-
-    func testADisplayOnAnotherMacSaysWhere() {
-        XCTAssertEqual(StatusMenu.DisplayOff(machine: nil, uuid: "A", name: "LG UltraFine").title, "LG UltraFine")
-        XCTAssertEqual(StatusMenu.DisplayOff(machine: "mini", uuid: "B", name: "DELL U2723QE").title, "DELL U2723QE on mini")
+        facts.update = nil
+        XCTAssertEqual(entries(facts).count, 8)
     }
 
     func testTheMenuBarItemSaysWhereTheCursorIs() {

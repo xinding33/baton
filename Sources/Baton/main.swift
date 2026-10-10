@@ -49,6 +49,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             arrangement = ArrangementPane(anchor: anchor)
             keyboard = KeyboardSettings(anchor: anchor)
             keyboard?.onStateChanged = { [weak self] in self?.refreshMenu() }
+            keyboard?.clipboardRows = { [weak clipboard] in clipboard?.settingsRows() ?? [] }
             WakeTogether.shared.start(as: config, links: anchor.server)
             clipboard.onSettingChanged = { [weak anchor] in anchor?.setShareClipboard($0) }
             anchor.onPausedChanged = { [weak clipboard] paused in
@@ -84,9 +85,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         settings.attach(anchor: anchor, client: client)
         settings.otherAttention = { [weak clipboard] in [clipboard?.attention].compactMap { $0 } }
         settings.onMenuIconChanged = { [weak self] in self?.refreshMenu() }
-        // General first, then what only the anchor decides, then each feature's own pane.
-        var panes: [SettingsPane?] = [settings, arrangement, keyboard?.pane]
-        panes += [ScrollReverser.shared.settingsPane, displayMenu?.settingsPane, WakeTogether.shared.settingsPane, clipboard.settingsPane, Updates.shared.settingsPane]
+        // General first, then each feature's own pane. Where the Macs sit comes after their displays.
+        // The clipboard is in the Keyboard pane, and has its own where there is none: on a client.
+        var panes: [SettingsPane?] = [settings, ScrollReverser.shared.settingsPane, keyboard?.pane, displayMenu?.settingsPane, arrangement]
+        panes += [WakeTogether.shared.settingsPane, keyboard == nil ? clipboard.settingsPane : nil, Updates.shared.settingsPane]
         window.setPanes(panes.compactMap { $0 })
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         refreshMenu()
@@ -187,7 +189,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         facts.attention = settings.attention()
         facts.canWakeAll = WakeTogether.shared.canWakeAll
         facts.wakeHotKey = WakeTogether.shared.hotKeyDisplay
-        facts.displaysOff = displayMenu?.displaysOff ?? []
         facts.update = Updates.shared.menuLine
         return facts
     }
@@ -210,7 +211,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case let .setPaused(paused): anchor?.setPaused(paused)
         case let .moveKeyboard(name): _ = anchor?.moveKeyboard(to: name)
         case .wakeAll: WakeTogether.shared.wakeAll()
-        case let .reconnect(displays): displays.forEach { displayMenu?.reconnect($0) }
         case let .settings(pane): window.show(pane)
         case .quit: quit()
         }

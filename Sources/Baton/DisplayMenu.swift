@@ -2,7 +2,7 @@ import AppKit
 import BatonCore
 
 /// The Displays pane of Settings: this Mac's external displays, and on the anchor the other
-/// Macs' too, which are switched over the link. The menu only offers to reconnect one that is off.
+/// Macs' too, which are switched over the link.
 final class DisplayMenu: NSObject {
     private let toggle = DisplayToggle()
     private let anchor: Anchor?
@@ -25,7 +25,7 @@ final class DisplayMenu: NSObject {
         toggle.reconnectAllAndExit()
     }
 
-    // MARK: Settings and the menu
+    // MARK: Settings
 
     private var remotePanels: [(String, DisplayPanel)] {
         (anchor?.displayPanels ?? [:]).sorted { $0.key < $1.key }
@@ -64,19 +64,6 @@ final class DisplayMenu: NSObject {
         if let unavailable = panel.unavailable { rows.append(.note(unavailable.replacingOccurrences(of: "\n", with: " "), warning: false)) }
         if let error = panel.lastError { rows.append(.note(error)) }
         return rows
-    }
-
-    /// The displays Baton has turned off, which the menu offers to reconnect: this Mac's, and on
-    /// the anchor the other Macs' as well.
-    var displaysOff: [StatusMenu.DisplayOff] {
-        func off(_ panel: DisplayPanel, on machine: String?) -> [StatusMenu.DisplayOff] {
-            panel.rows.filter { $0.state == .off }.map { StatusMenu.DisplayOff(machine: machine, uuid: $0.uuid, name: $0.name) }
-        }
-        return off(toggle.panel, on: nil) + remotePanels.flatMap { off($0.1, on: $0.0) }
-    }
-
-    func reconnect(_ display: StatusMenu.DisplayOff) {
-        send(.turnOn(display.uuid), to: display.machine)
     }
 
     private func send(_ action: DisplayAction, to machine: String?) {

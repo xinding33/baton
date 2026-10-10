@@ -70,21 +70,20 @@ Settings are kept in `~/Library/Application Support/Baton`: `config.json`, and `
 ## The menu and Settings
 
 The menu bar item (⇄) holds what is done in a hurry: on the anchor, which Macs
-are connected, **Bring Cursor Home**, **Pause Sharing**, where the shared keyboard is and a
+are connected, **Pause Sharing**, **Bring Cursor Home**, where the shared keyboard is and a
 submenu to move it, **Wake All Macs**, **Settings…** and **Quit Baton**. A client has its
-connection, **Wake All Macs**, **Settings…** and **Quit Baton**. Three kinds of line come and
+connection, **Wake All Macs**, **Settings…** and **Quit Baton**. Two kinds of line come and
 go above and between those:
 
 - what needs attention on that Mac, at the top, each opening the pane that puts it right: a
   missing permission, a Mac with no place yet, copies that are not getting through;
-- **Reconnect** and a display's name, while Baton has that display turned off;
 - what the updater is doing while it installs a release, or which Mac is on another version.
 
 **Pause Sharing** leaves each Mac to itself until **Resume Sharing**. The cursor comes back to
 the anchor and stays there, the shared keyboard stops following it, a copy stays on the Mac it
 was made on, a display that wakes does not wake the others, and a Mac in use does not keep the
-others awake. The switches in Settings stay as they are, and the Sleep & Wake and Clipboard panes
-say that they are paused. What is copied during a pause is not sent afterwards either. What you
+others awake. The switches in Settings stay as they are, and Sleep & Wake and the clipboard's
+rows say that they are paused. What is copied during a pause is not sent afterwards either. What you
 ask for by hand still happens: **Wake All Macs**, moving the keyboard from the menu, turning a
 display off or on. Updates carry on too. A pause lasts until it is resumed or Baton restarts.
 
@@ -93,12 +92,12 @@ Everything that is set once and left alone is in **Settings…**, a pane for eac
 | Pane | What is there | Applies to |
 |---|---|---|
 | General | Name, role, pairing code, permissions, **Open at Login**, **Show in the menu bar** | this Mac |
-| Arrange | Where each Mac sits (anchor only) | all Macs |
-| Keyboard | The shared keyboard, whether it follows the cursor and how it moves (anchor only) | all Macs |
 | Mouse | Reversing the mouse wheel | this Mac |
+| Keyboard | The shared keyboard, whether it follows the cursor and how it moves, and sharing the clipboard (anchor only) | all Macs |
 | Displays | Turning external displays off and on; the anchor also lists the other Macs' | each Mac's own |
+| Arrange | Where each Mac sits (anchor only) | all Macs |
 | Sleep & Wake | Waking together and staying awake | this Mac |
-| Clipboard | Sharing the clipboard | all Macs |
+| Clipboard | Sharing the clipboard (clients only; on the anchor it is under Keyboard) | all Macs |
 | Updates | The version, **Check for Updates…**, installing automatically | all Macs |
 
 A switch takes effect when it is flipped. Only the name, the role, the pairing code and the choice
@@ -188,8 +187,7 @@ same Mac: two reversals cancel out.
 
 **Displays** in each Mac's Settings lists its external displays. Untick one to turn it off while
 its cable stays plugged in, and tick it again to reconnect it. The anchor's pane also lists the
-other Macs' displays and switches them over the link. While a display is off, the menu offers to
-reconnect it, on its own Mac and on the anchor. This is
+other Macs' displays and switches them over the link. This is
 [Wink](https://github.com/xinding33/wink) built in, with Wink's rules:
 
 - A display you turn off is remembered, and turned off again whenever it appears: after login,
@@ -245,8 +243,9 @@ wake would be sent twice.
 
 What is copied on one Mac can be pasted on the others: text, rich text, links and images. A copy
 is sent to the other Macs the moment it is made, so it is already there when the cursor arrives.
-**Share the clipboard between your Macs**, under **Clipboard** in Settings on any Mac, switches
-it for all of them.
+**Share the clipboard between your Macs** switches it for all of them, from any Mac: it is under
+**Keyboard** in the anchor's Settings, and under **Clipboard** on a client, which has no Keyboard
+pane.
 
 Not shared:
 
@@ -265,8 +264,8 @@ the two cannot loop; but macOS may still put its own, slower copy in place of th
 delivered.
 
 Baton therefore watches the Handoff setting on every Mac. While Universal Clipboard is on on two
-or more of them, the Clipboard pane on the anchor has a button for each client to turn it off
-on, each of those clients has one in its own pane, and the menus point there. Pressing one opens
+or more of them, the anchor's Keyboard pane has a button for each client to turn it off
+on, each of those clients has one in its Clipboard pane, and the menus point there. Pressing one opens
 the setting on that Mac: System Settings → General → AirDrop & Continuity → "Allow Handoff
 between this Mac and your iCloud devices". The buttons go away within a few seconds of switching
 it off. The anchor may keep
@@ -280,7 +279,7 @@ megabytes never delays the heartbeat on the input link.
 macOS 27.0 lets Baton read the pasteboard without asking. If a later version asks, it asks once,
 on the Mac where something was just copied; set Baton to always allow under Privacy & Security →
 Paste from Other Apps on each Mac. Until then that Mac still receives the others' copies, and
-its menu and its Clipboard pane say that copies made there are not shared.
+its menu and the clipboard's rows in its Settings say that copies made there are not shared.
 
 ## Updates
 

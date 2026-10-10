@@ -27,10 +27,10 @@ final class SharedClipboardTests: XCTestCase {
         }
     }
 
-    /// What can be pressed in the Clipboard pane: the switch, then a button for each Mac that
-    /// should turn Handoff off.
+    /// What can be pressed among the clipboard's rows: the switch, then a button for each Mac
+    /// that should turn Handoff off.
     func controls(_ clipboard: SharedClipboard) -> [SettingsRow] {
-        clipboard.settingsPane.rows.filter { $0.act != nil }
+        clipboard.settingsRows().filter { $0.act != nil }
     }
 
     func status(_ clipboard: SharedClipboard) -> [String: Any] {
@@ -92,7 +92,7 @@ final class SharedClipboardTests: XCTestCase {
         XCTAssertEqual(status(anchor)["paused"] as? Bool, true)
         XCTAssertEqual(controls(anchor)[0].isOn, true)
         XCTAssertEqual(controls(client)[0].isOn, true)
-        XCTAssertTrue(anchor.settingsPane.rows.first { $0.kind == .note(warning: false) }?.title.hasPrefix("Sharing is paused, in Baton’s menu.") == true)
+        XCTAssertTrue(anchor.settingsRows().first { $0.kind == .note(warning: false) }?.title.hasPrefix("Sharing is paused, in Baton’s menu.") == true)
         XCTAssertTrue(client.settingsPane.rows.first { $0.kind == .note(warning: false) }?.title.hasPrefix("Sharing is paused, in the menu of the anchor’s Baton.") == true)
         here.clearContents()
         here.setString("kept here", forType: .string)
@@ -100,7 +100,7 @@ final class SharedClipboardTests: XCTestCase {
         XCTAssertEqual(there.string(forType: .string), "and back")
         anchor.setPaused(false)
         wait("the resume on the client") { self.status(client)["paused"] as? Bool == false }
-        XCTAssertFalse(anchor.settingsPane.rows.contains { $0.kind == .note(warning: false) })
+        XCTAssertFalse(anchor.settingsRows().contains { $0.kind == .note(warning: false) })
         XCTAssertEqual(saved, [false, true], "a pause is not the setting")
 
         // The input link went away: the clipboard's connection goes with it.
@@ -139,14 +139,15 @@ final class SharedClipboardTests: XCTestCase {
         XCTAssertEqual(controls(client).map(\.title), [share, "Turn Off Handoff on This Mac…"])
         XCTAssertEqual(status(anchor)["turnOffHandoffOn"] as? [String], ["mini"])
         XCTAssertEqual(status(client)["universalClipboardHere"] as? Bool, true)
-        let note = anchor.settingsPane.rows.first { $0.kind == .note(warning: true) }
+        let note = anchor.settingsRows().first { $0.kind == .note(warning: true) }
         XCTAssertTrue(note?.title.contains("AirDrop") == true)
-        // Each menu points at the pane, in one line.
-        XCTAssertEqual(anchor.attention?.pane, StatusMenu.Pane.clipboard)
+        // Each menu points at the pane the rows are in, in one line.
+        XCTAssertEqual(anchor.attention?.pane, StatusMenu.Pane.keyboard)
+        XCTAssertEqual(client.attention?.pane, StatusMenu.Pane.clipboard)
         XCTAssertEqual(client.attention?.summary, "Universal Clipboard gets in the way")
 
         // Pressed in the anchor's pane, the setting opens on the mini, where it has to be changed.
-        XCTAssertNotNil(anchor.settingsPane.rows.press("Turn Off Handoff on mini…"))
+        XCTAssertNotNil(anchor.settingsRows().press("Turn Off Handoff on mini…"))
         wait("the setting to open on the mini") { openedOnTheMini == [UniversalClipboard.settingsURL] }
         XCTAssertNotNil(client.settingsPane.rows.press("Turn Off Handoff on This Mac…"))
         wait("the setting to open again") { openedOnTheMini.count == 2 }

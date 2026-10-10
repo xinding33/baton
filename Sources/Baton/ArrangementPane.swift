@@ -165,7 +165,7 @@ final class ArrangementPane: SettingsPane {
     let id = StatusMenu.Pane.arrange
     let title = "Arrange"
     let symbol = "rectangle.3.group"
-    private static let size = NSSize(width: 720, height: 460)
+    private static let size = NSSize(width: SetupView.width, height: 460)
     private static let footerHeight: CGFloat = 52
 
     private let anchor: Anchor

@@ -3,7 +3,7 @@ import BatonCore
 import Network
 
 /// The shared clipboard as the app sees it: `ClipboardService` on the real pasteboard and the
-/// real network, with its pane of Settings and its `ctl clipboard` command.
+/// real network, with its rows in Settings and its `ctl clipboard` command.
 final class SharedClipboard: NSObject {
     private let config: Config
     private let secret: Data
@@ -81,20 +81,27 @@ final class SharedClipboard: NSObject {
         status.enabled ? status.turnOffHandoffOn.filter { config.role == .anchor || $0 == config.name } : []
     }
 
+    /// Where the clipboard's rows are: in the anchor's Keyboard pane, and on a client, which has
+    /// no Keyboard pane, in a pane of their own.
+    private var pane: (id: String, title: String) {
+        config.role == .anchor ? (StatusMenu.Pane.keyboard, "Keyboard") : (StatusMenu.Pane.clipboard, "Clipboard")
+    }
+
     /// What the menu points out while copies are not getting through as they should.
     var attention: StatusMenu.Attention? {
         let status = service.status
         if pasteBlocked(status) {
-            return .init(summary: "Copies made here are not shared", detail: "Copies made on this Mac are not shared: see Clipboard.", pane: StatusMenu.Pane.clipboard)
+            return .init(summary: "Copies made here are not shared", detail: "Copies made on this Mac are not shared: see \(pane.title).", pane: pane.id)
         }
         guard !handoffMachines(status).isEmpty else { return nil }
-        return .init(summary: "Universal Clipboard gets in the way", detail: "Universal Clipboard is also on and gets in the way of the shared clipboard: see Clipboard.", pane: StatusMenu.Pane.clipboard)
+        return .init(summary: "Universal Clipboard gets in the way", detail: "Universal Clipboard is also on and gets in the way of the shared clipboard: see \(pane.title).", pane: pane.id)
     }
 
-    /// The Clipboard pane of Settings.
+    /// The Clipboard pane of a client's Settings.
     private(set) lazy var settingsPane = FormPane(id: StatusMenu.Pane.clipboard, title: "Clipboard", symbol: "doc.on.clipboard") { [unowned self] in self.settingsRows() }
 
-    private func settingsRows() -> [SettingsRow] {
+    /// The clipboard's rows: a client's Clipboard pane, and the end of the anchor's Keyboard pane.
+    func settingsRows() -> [SettingsRow] {
         let status = service.status
         let reachable = config.role == .anchor || status.connected
         var rows: [SettingsRow] = [
