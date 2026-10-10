@@ -44,6 +44,7 @@ final class Anchor {
     private var handoffInProgress: (from: String?, to: String, startedAt: UInt64)?
     private var handoffBlockedUntil: UInt64 = 0
     private var keyboardMissingSince: UInt64?
+    private var lastPointerActivityAt: UInt64 = 0
     private(set) var lastHandoff = "none yet"
     private var capturing = false
     private var lastCrossingAt: UInt64 = 0
@@ -282,6 +283,9 @@ final class Anchor {
     }
 
     private func handle(_ type: CGEventType, _ event: CGEvent) -> Bool {
+        if type != .keyDown, type != .keyUp, type != .flagsChanged {
+            lastPointerActivityAt = Net.monotonicMillis()
+        }
         switch type {
         case .mouseMoved, .leftMouseDragged, .rightMouseDragged, .otherMouseDragged:
             return moved(
@@ -374,14 +378,17 @@ final class Anchor {
         onStateChanged?()
     }
 
-    /// Moves the keyboard to the machine with the cursor once the cursor has settled there and
-    /// the keyboard is idle, so no keystroke is cut off mid-handoff.
+    /// Moves the keyboard to the machine with the cursor. The keyboard is unusable for the two
+    /// seconds or so a handoff takes, and anything typed then is lost, so it only starts when the
+    /// cursor has settled, typing has paused, and the mouse is in use: a hand on the mouse is a
+    /// hand that is not about to type.
     private func considerHandoff() {
         let now = Net.monotonicMillis()
         guard config.keyboardFollows, config.keyboardAddress != nil, handoffInProgress == nil, !paused, now >= handoffBlockedUntil else { return }
         let target = focusName
         let lastKeyAt = max(keyCapture.lastActivityAt, lastForwardedKeyAt)
-        guard now - focusSince >= 300, now - lastKeyAt >= 700, !keyCapture.anyKeyDown, forwardedKeysDown.isEmpty else { return }
+        guard now - focusSince >= 1000, now - lastKeyAt >= 1500, now - lastPointerActivityAt <= 400,
+              !keyCapture.anyKeyDown, forwardedKeysDown.isEmpty else { return }
         if let owner = keyboardOwner {
             keyboardMissingSince = nil
             if owner != target { moveKeyboard(to: target) }
@@ -419,6 +426,7 @@ final class Anchor {
             self.keyboard(.take, on: target) { ok, detail in
                 let elapsed = Net.monotonicMillis() - startedAt
                 if ok {
+                    log("keyboard: \(target) took it (\(detail))")
                     self.finishHandoff("moved to \(target) in \(elapsed) ms", blockFor: 0)
                 } else if let owner {
                     log("keyboard: \(target) could not take it (\(detail)); returning it to \(owner)")

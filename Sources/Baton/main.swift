@@ -123,6 +123,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             menu.addItem(withTitle: "Arrange Macs…", action: #selector(showArrangement), keyEquivalent: "").target = self
             menu.addItem(.separator())
             menu.addItem(withTitle: "Keyboard is on: \(anchor.keyboardOwner ?? "no Mac")", action: nil, keyEquivalent: "")
+            let move = NSMenuItem(title: "Move keyboard to", action: nil, keyEquivalent: "")
+            let destinations = NSMenu()
+            for name in anchor.onlineMachines.sorted() where name != anchor.keyboardOwner {
+                let item = destinations.addItem(withTitle: name, action: #selector(moveKeyboard(_:)), keyEquivalent: "")
+                item.target = self
+                item.representedObject = name
+            }
+            move.submenu = destinations
+            menu.addItem(move)
             let follow = menu.addItem(withTitle: "Keyboard follows the cursor", action: #selector(toggleKeyboardFollows), keyEquivalent: "")
             follow.target = self
             follow.state = anchor.keyboardFollows ? .on : .off
@@ -138,6 +147,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func home() { anchor?.goLocal(at: nil) }
     @objc private func showArrangement() { arrangementWindow?.show() }
+    @objc private func moveKeyboard(_ sender: NSMenuItem) {
+        guard let name = sender.representedObject as? String else { return }
+        anchor?.moveKeyboard(to: name)
+    }
+
     @objc private func toggleKeyboardFollows() { anchor.map { $0.setKeyboardFollows(!$0.keyboardFollows) } }
     @objc private func togglePause() { anchor.map { $0.setPaused(!$0.paused) } }
     @objc private func quit() {

@@ -188,27 +188,30 @@ final class KeyboardMover: NSObject, IOBluetoothDevicePairDelegate, CBCentralMan
 
         case .pair:
             // Just after its old host forgets it, the keyboard refuses for a few seconds. Keep asking.
-            let deadline = Date().addingTimeInterval(15)
-            var attempts = 0
-            var last = "could not start"
+            // A pairing that works takes about a second, so an attempt that hasn't finished in three
+            // is abandoned and started again rather than waited out.
+            let deadline = Date().addingTimeInterval(18)
+            var attempts: [String] = []
             while Date() < deadline {
-                attempts += 1
+                let started = Net.monotonicMillis()
                 guard let pair = IOBluetoothDevicePair(device: device) else { break }
                 pairingResult = nil
                 pair.delegate = self
                 let result = pair.start()
-                if result != kIOReturnSuccess {
-                    last = "failed to start \(code(result))"
-                } else if wait(10, until: { pairingResult != nil }), let outcome = pairingResult {
-                    if outcome == kIOReturnSuccess { return (true, "done on attempt \(attempts)") }
-                    last = "failed \(code(outcome))"
-                } else {
-                    pair.stop()
-                    last = "timed out"
+                var outcome = "failed to start \(code(result))"
+                if result == kIOReturnSuccess {
+                    if wait(3, until: { pairingResult != nil }), let finished = pairingResult {
+                        outcome = finished == kIOReturnSuccess ? "ok" : "failed \(code(finished))"
+                    } else {
+                        pair.stop()
+                        outcome = "abandoned"
+                    }
                 }
-                _ = wait(0.5) { false }
+                attempts.append("\(outcome) in \(Net.monotonicMillis() - started) ms")
+                if outcome == "ok" { return (true, attempts.joined(separator: ", ")) }
+                _ = wait(0.3) { false }
             }
-            return (false, "\(last) after \(attempts) attempt(s)")
+            return (false, attempts.isEmpty ? "could not start" : attempts.joined(separator: ", "))
 
         case .connect:
             if !device.isConnected() {
