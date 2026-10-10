@@ -41,6 +41,7 @@ final class EventTap {
             if event.getIntegerValueField(.eventSourceUserData) == Injector.marker {
                 return Unmanaged.passUnretained(event)
             }
+            WakeTogether.shared.sawInput()
             // Wake All Macs is the same hotkey on every Mac, whichever role its tap serves.
             if WakeTogether.shared.consumes(type, event) { return nil }
             return tap.handler(type, event) ? nil : Unmanaged.passUnretained(event)

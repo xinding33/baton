@@ -109,6 +109,9 @@ public struct WakeSettings: Codable, Equatable, Sendable {
     /// still sleeps on schedule.
     public var keepAwake = true
     public var keepAwakeOnlyOnPower = true
+    /// Count another Mac being in use as activity here, so this Mac's display stays on with it.
+    /// Follows `keepAwakeOnlyOnPower` too.
+    public var stayAwakeWithOthers = true
     /// Nil switches the hotkey off.
     public var hotKey: WakeHotKey? = .standard
 
@@ -119,6 +122,7 @@ public struct WakeSettings: Codable, Equatable, Sendable {
         wakeOthers = try c.decodeIfPresent(Bool.self, forKey: .wakeOthers) ?? true
         keepAwake = try c.decodeIfPresent(Bool.self, forKey: .keepAwake) ?? true
         keepAwakeOnlyOnPower = try c.decodeIfPresent(Bool.self, forKey: .keepAwakeOnlyOnPower) ?? true
+        stayAwakeWithOthers = try c.decodeIfPresent(Bool.self, forKey: .stayAwakeWithOthers) ?? true
         // A missing key means the usual hotkey; an explicit null means none.
         hotKey = c.contains(.hotKey) ? try c.decode(WakeHotKey?.self, forKey: .hotKey) : .standard
     }
@@ -128,11 +132,12 @@ public struct WakeSettings: Codable, Equatable, Sendable {
         try c.encode(wakeOthers, forKey: .wakeOthers)
         try c.encode(keepAwake, forKey: .keepAwake)
         try c.encode(keepAwakeOnlyOnPower, forKey: .keepAwakeOnlyOnPower)
+        try c.encode(stayAwakeWithOthers, forKey: .stayAwakeWithOthers)
         try c.encode(hotKey, forKey: .hotKey)
     }
 
     private enum CodingKeys: String, CodingKey {
-        case wakeOthers, keepAwake, keepAwakeOnlyOnPower, hotKey
+        case wakeOthers, keepAwake, keepAwakeOnlyOnPower, stayAwakeWithOthers, hotKey
     }
 }
 

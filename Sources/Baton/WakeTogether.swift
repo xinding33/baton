@@ -7,6 +7,7 @@ import IOKit.pwr_mgt
 protocol WakeLinks: AnyObject {
     var wakeLinks: [WakeLink] { get }
     func sendWake(_ request: WakeRequest, to link: WakeLink)
+    func sendInUse(to link: WakeLink)
 }
 
 extension AnchorServer: WakeLinks {
@@ -17,10 +18,15 @@ extension AnchorServer: WakeLinks {
     func sendWake(_ request: WakeRequest, to link: WakeLink) {
         send(link.name, .wake(request))
     }
+
+    func sendInUse(to link: WakeLink) {
+        send(link.name, .inUse)
+    }
 }
 
 /// Wakes the Macs' displays together, keeps this Mac reachable, and offers Wake All Macs: the
-/// Ripple app's job, done over Baton's own link. What to do when is decided by `WakeCoordinator`
+/// Ripple app's job, done over Baton's own link. It also keeps the Macs awake together while one
+/// of them is in use. What to do when is decided by `WakeCoordinator` and `StayAwakeCoordinator`
 /// in BatonCore; this is the part that touches the Mac.
 final class WakeTogether: NSObject {
     static let shared = WakeTogether()
@@ -39,11 +45,16 @@ final class WakeTogether: NSObject {
     private let keepAwake = KeepAwake()
     private var recognizer = WakeHotKeyRecognizer()
     private var pendingWatch: DispatchSourceTimer?
+    private var inUse: StayAwakeCoordinator?
+    private let stayAwake = StayAwake()
+    private var toldOthersAt: Date?
+    private var heard: (at: Date, outcome: String)?
     private var recent: [String] = []
 
     func start(as config: Config, links: WakeLinks) {
         self.links = links
         coordinator = WakeCoordinator(name: config.name, role: config.role)
+        inUse = StayAwakeCoordinator(role: config.role)
         settings = loadSettings()
         keepAwake.onChange = { [weak self] in self?.onStateChanged?() }
         apply()
@@ -161,6 +172,44 @@ final class WakeTogether: NSObject {
         return outcome != .pass
     }
 
+    // MARK: Staying awake together
+
+    /// Called by every event tap for each event from this Mac's own devices. While they are in
+    /// use the other Macs are told, once per `StayAwakeCoordinator.reportEveryMs`.
+    func sawInput() {
+        guard inUse?.reportIsDue(now: Self.now()) == true else { return }
+        // The tap's callback has to return at once, so the work happens after it.
+        DispatchQueue.main.async {
+            guard let links = self.links else { return }
+            let others = links.wakeLinks
+            others.forEach(links.sendInUse)
+            if !others.isEmpty { self.toldOthersAt = Date() }
+        }
+    }
+
+    /// The machine called `sender` says it is in use, or passes on that another is.
+    func heardInUse(from sender: String) {
+        guard let inUse else { return }
+        for action in inUse.received(from: sender, links: links?.wakeLinks ?? []) {
+            switch action {
+            case let .send(link):
+                links?.sendInUse(to: link)
+            case .stayAwake:
+                stayAwake.heard(enabled: settings.stayAwakeWithOthers, onlyOnPower: settings.keepAwakeOnlyOnPower) { [weak self] heldBackBy in
+                    guard let self else { return }
+                    let outcome = heldBackBy.map { "left to its own timers: \($0)" } ?? "staying awake with it"
+                    // A report comes every few seconds; the log gets only what changed.
+                    if outcome != self.heard?.outcome { self.note("another Mac is in use; \(outcome)") }
+                    self.heard = (Date(), outcome)
+                }
+            }
+        }
+    }
+
+    private static func ago(_ date: Date?) -> String {
+        date.map { "\(Int(-$0.timeIntervalSinceNow)) s ago" } ?? "never"
+    }
+
     // MARK: Menu and control
 
     func addMenuItems(to menu: NSMenu) {
@@ -177,7 +226,9 @@ final class WakeTogether: NSObject {
         _ = add("Wake Others When This Mac Wakes", #selector(toggleWakeOthers), on: settings.wakeOthers)
         let paused = settings.keepAwake && !keepAwake.isHolding
         _ = add("Keep This Mac Awake" + (paused ? " (paused on battery)" : ""), #selector(toggleKeepAwake), on: settings.keepAwake)
-        add("Only on Power Adapter", #selector(toggleOnlyOnPower), on: settings.keepAwakeOnlyOnPower, enabled: settings.keepAwake).indentationLevel = 1
+        let waiting = settings.stayAwakeWithOthers && settings.keepAwakeOnlyOnPower && !KeepAwake.onPowerAdapter
+        _ = add("Stay Awake While Another Mac Is in Use" + (waiting ? " (paused on battery)" : ""), #selector(toggleStayAwake), on: settings.stayAwakeWithOthers)
+        add("Only on Power Adapter", #selector(toggleOnlyOnPower), on: settings.keepAwakeOnlyOnPower, enabled: settings.keepAwake || settings.stayAwakeWithOthers).indentationLevel = 1
     }
 
     @objc private func toggleWakeOthers() {
@@ -188,13 +239,17 @@ final class WakeTogether: NSObject {
         change("keep this Mac awake: \(!settings.keepAwake)") { $0.keepAwake.toggle() }
     }
 
+    @objc private func toggleStayAwake() {
+        change("stay awake while another Mac is in use: \(!settings.stayAwakeWithOthers)") { $0.stayAwakeWithOthers.toggle() }
+    }
+
     @objc private func toggleOnlyOnPower() {
         change("keep awake only on power adapter: \(!settings.keepAwakeOnlyOnPower)") { $0.keepAwakeOnlyOnPower.toggle() }
     }
 
     /// `ctl wake`: shows the state. `all` wakes every Mac; the rest change this Mac's settings.
     func command(_ words: [String]) -> String {
-        let usage = "usage: wake [all | others on|off | keep on|off | adapter-only on|off]"
+        let usage = "usage: wake [all | others on|off | keep on|off | in-use on|off | adapter-only on|off]"
         guard let coordinator else { return "wake-together has not started" }
         switch (words.first, words.count) {
         case (nil, _):
@@ -205,6 +260,8 @@ final class WakeTogether: NSObject {
             change("wake the others when this Mac wakes: \(words[1])") { $0.wakeOthers = words[1] == "on" }
         case ("keep", 2) where ["on", "off"].contains(words[1]):
             change("keep this Mac awake: \(words[1])") { $0.keepAwake = words[1] == "on" }
+        case ("in-use", 2) where ["on", "off"].contains(words[1]):
+            change("stay awake while another Mac is in use: \(words[1])") { $0.stayAwakeWithOthers = words[1] == "on" }
         case ("adapter-only", 2) where ["on", "off"].contains(words[1]):
             change("keep awake only on power adapter: \(words[1])") { $0.keepAwakeOnlyOnPower = words[1] == "on" }
         default:
@@ -217,6 +274,9 @@ final class WakeTogether: NSObject {
             "keepAwake": settings.keepAwake,
             "keepAwakeOnlyOnPower": settings.keepAwakeOnlyOnPower,
             "keepingAwake": keepAwake.isHolding,
+            "stayAwakeWithOthers": settings.stayAwakeWithOthers,
+            "toldOthersInUse": Self.ago(toldOthersAt),
+            "heardInUse": heard.map { "\(Self.ago($0.at)); \($0.outcome)" } ?? "never",
             "onPowerAdapter": KeepAwake.onPowerAdapter,
             "hotKey": settings.hotKey?.display ?? "none",
             "links": (links?.wakeLinks ?? []).map(\.name).sorted(),
@@ -240,7 +300,7 @@ final class WakeTogether: NSObject {
 
 /// Holds off idle system sleep, so this Mac keeps its link and can be woken. The display still
 /// sleeps on schedule.
-private final class KeepAwake {
+final class KeepAwake {
     private var wanted = false
     private var onlyOnPower = true
     private var assertion: IOPMAssertionID = 0

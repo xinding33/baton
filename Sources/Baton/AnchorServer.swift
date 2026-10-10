@@ -124,6 +124,8 @@ final class AnchorServer {
                 peer.rttMs = peer.rttMs == 0 ? sample : peer.rttMs * 0.8 + sample * 0.2
             case let .wake(request):
                 WakeTogether.shared.received(request, from: peer.name)
+            case .inUse:
+                WakeTogether.shared.heardInUse(from: peer.name)
             case let .key(key):
                 self.onForwardedKey?(peer.name, key)
             case let .keyboardPresent(present):

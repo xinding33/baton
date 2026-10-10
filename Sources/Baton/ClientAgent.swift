@@ -333,6 +333,8 @@ final class ClientAgent {
             onDisplayAction?(action)
         case let .wake(request):
             WakeTogether.shared.received(request, from: anchorName)
+        case .inUse:
+            WakeTogether.shared.heardInUse(from: anchorName)
         default:
             break
         }
@@ -426,5 +428,9 @@ extension ClientAgent: WakeLinks {
 
     func sendWake(_ request: WakeRequest, to link: WakeLink) {
         self.link?.send(.wake(request))
+    }
+
+    func sendInUse(to link: WakeLink) {
+        self.link?.send(.inUse)
     }
 }
