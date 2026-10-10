@@ -24,6 +24,7 @@ enum Net {
         tcp.keepaliveCount = 3
         let parameters = NWParameters(tls: tls, tcp: tcp)
         parameters.serviceClass = .interactiveVideo
+        useIPv4(parameters)
         return parameters
     }
 
@@ -31,7 +32,14 @@ enum Net {
         let parameters = NWParameters.udp
         parameters.allowLocalEndpointReuse = true
         parameters.serviceClass = .interactiveVideo
+        useIPv4(parameters)
         return parameters
+    }
+
+    /// Discovery otherwise tends to pick an IPv6 link-local address, which is only meaningful
+    /// together with an interface and so can't be reused for the datagram path or remembered.
+    private static func useIPv4(_ parameters: NWParameters) {
+        (parameters.defaultProtocolStack.internetProtocol as? NWProtocolIP.Options)?.version = .v4
     }
 
     static func monotonicMillis() -> UInt64 {
