@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleIdentifier</key>
+    <string>com.xinding.baton</string>
+    <key>CFBundleName</key>
+    <string>Baton</string>
+    <key>CFBundleExecutable</key>
+    <string>Baton</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleShortVersionString</key>
+    <string>0.1</string>
+    <key>CFBundleVersion</key>
+    <string>1</string>
+    <key>LSMinimumSystemVersion</key>
+    <string>14.0</string>
+    <key>LSUIElement</key>
+    <true/>
+    <key>NSLocalNetworkUsageDescription</key>
+    <string>Baton shares your mouse and keyboard with your other Macs on this network.</string>
+    <key>NSBonjourServices</key>
+    <array>
+        <string>_baton._tcp</string>
+    </array>
+</dict>
+</plist>
