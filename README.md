@@ -248,7 +248,9 @@ The screen saver is held off as well, so a Mac that asks for its password as soo
 saver starts does not lock while you work at another. The hold lasts for that Mac's screen saver
 time after your last input at any of them, or its display sleep time if that is shorter. macOS
 looks again only once per screen saver time, so after you stop the screen saver starts between
-one and two of those later.
+one and two of those later. Locking a Mac ends its hold at once, and so do Pause Sharing and
+switching **Stay awake while another Mac is in use** off, so a locked Mac's display goes dark as
+soon as it would without Baton.
 
 Each Mac has its own switches under **Sleep & Wake** in Settings: **Wake the other Macs when this
 Mac wakes**, **Keep this Mac awake**, **Stay awake while another Mac is in use** and **Only on
