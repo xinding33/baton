@@ -107,6 +107,7 @@ final class WakeTogether: NSObject {
     private func apply() {
         coordinator?.wakeOthers = settings.wakeOthers
         keepAwake.configure(wanted: settings.keepAwake, onlyOnPower: settings.keepAwakeOnlyOnPower)
+        if !settings.stayAwakeWithOthers { stayAwake.standDown("switched off") }
     }
 
     // MARK: Waking
@@ -179,6 +180,7 @@ final class WakeTogether: NSObject {
         guard let coordinator, value != coordinator.paused else { return }
         self.coordinator?.paused = value
         inUse?.paused = value
+        if value { stayAwake.standDown("sharing is paused") }
         note(value ? "sharing is paused: only Wake All Macs reaches the other Macs" : "sharing is resumed")
         onStateChanged?()
     }
