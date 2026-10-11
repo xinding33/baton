@@ -12,6 +12,7 @@ final class StatusMenuTests: XCTestCase {
         facts.keyboardOwner = "studio"
         facts.canWakeAll = true
         facts.wakeHotKey = "⌃⌥⌘W"
+        facts.pauseHotKey = "⌃⌥⌘P"
         return facts
     }
 
@@ -22,7 +23,7 @@ final class StatusMenuTests: XCTestCase {
     func testTheAnchorsMenuHasSevenItemsOnAnOrdinaryDay() {
         XCTAssertEqual(StatusMenu.items(anchor), [
             .status("Connected: mbp, mini"),
-            .pause(resume: false),
+            .pause(resume: false, hotKey: "⌃⌥⌘P"),
             .home,
             .keyboard(owner: "studio", destinations: ["mbp", "mini"]),
             .wakeAll(hotKey: "⌃⌥⌘W"),
@@ -47,7 +48,8 @@ final class StatusMenuTests: XCTestCase {
         facts.sharesKeyboard = false
         facts.canWakeAll = false
         facts.peers = []
-        XCTAssertEqual(entries(facts), [.status("No other Macs connected"), .pause(resume: false), .home, .settings, .quit])
+        facts.pauseHotKey = nil
+        XCTAssertEqual(entries(facts), [.status("No other Macs connected"), .pause(resume: false, hotKey: nil), .home, .settings, .quit])
     }
 
     func testTheKeyboardCanGoToEveryMacButTheOneThatHasIt() {
@@ -68,7 +70,7 @@ final class StatusMenuTests: XCTestCase {
             .attention(accessibility),
             .separator,
             .status("Connected: mbp, mini"),
-            .pause(resume: true),
+            .pause(resume: true, hotKey: "⌃⌥⌘P"),
             .home,
             .keyboard(owner: "studio", destinations: ["mbp", "mini"]),
             .wakeAll(hotKey: "⌃⌥⌘W"),

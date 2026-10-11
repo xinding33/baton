@@ -44,7 +44,9 @@ final class EventTap {
                 return Unmanaged.passUnretained(event)
             }
             WakeTogether.shared.sawInput()
-            // Wake All Macs is the same hotkey on every Mac, whichever role its tap serves.
+            // Pause Sharing has a hotkey that every Mac listens for, whichever role its tap serves.
+            if SharingPause.shared.consumes(type, event) { return nil }
+            // Wake All Macs is the same hotkey on every Mac too.
             if WakeTogether.shared.consumes(type, event) { return nil }
             return tap.handler(type, event) ? nil : Unmanaged.passUnretained(event)
         }

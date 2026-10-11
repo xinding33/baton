@@ -252,6 +252,7 @@ final class ClientAgent {
             injector.releaseAll()
         }
         showCursor()
+        SharingPause.shared.follow(nil)
         onAnchorChanged?(nil)
         onStateChanged?()
         DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in self?.connect() }
@@ -353,6 +354,8 @@ final class ClientAgent {
             WakeTogether.shared.received(request, from: anchorName)
         case .inUse:
             WakeTogether.shared.heardInUse(from: anchorName)
+        case let .sharingHotKey(hotKey):
+            SharingPause.shared.follow(hotKey) { [weak link] in link?.send(.toggleSharing) }
         default:
             break
         }

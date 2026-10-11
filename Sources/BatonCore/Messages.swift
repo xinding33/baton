@@ -195,6 +195,10 @@ public enum Message: Codable, Sendable {
     case inUse
     /// A volume, brightness or playback key, sent the same two ways as `key`.
     case mediaKey(MediaKey)
+    /// Anchor to client: the hotkey for Pause Sharing, which the client listens for too. Nil for none.
+    case sharingHotKey(HotKey?)
+    /// Client to anchor: that hotkey was pressed here.
+    case toggleSharing
 }
 
 public enum Wire {

@@ -127,6 +127,8 @@ final class AnchorServer {
                 WakeTogether.shared.received(request, from: peer.name)
             case .inUse:
                 WakeTogether.shared.heardInUse(from: peer.name)
+            case .toggleSharing:
+                SharingPause.shared.pressed(on: peer.name)
             case let .key(key):
                 self.onForwardedKey?(peer.name, key)
             case let .mediaKey(key):
@@ -157,6 +159,7 @@ final class AnchorServer {
             self.drop(peer.name)
         }
         link.send(.welcome(Welcome(anchorName: config.name, sessionId: codec.sessionId, udpKey: key, udpPort: config.port, keyboardAddress: config.keyboardAddress)))
+        link.send(.sharingHotKey(SharingPause.shared.offered))
         log("\(hello.name): connected, \(hello.displays.count) display(s)")
         onPeersChanged?()
     }

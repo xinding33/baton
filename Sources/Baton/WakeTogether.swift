@@ -43,7 +43,7 @@ final class WakeTogether: NSObject {
     private weak var links: WakeLinks?
     private lazy var injector = Injector()
     private let keepAwake = KeepAwake()
-    private var recognizer = WakeHotKeyRecognizer()
+    private var recognizer = HotKeyRecognizer()
     private var pendingWatch: DispatchSourceTimer?
     private var inUse: StayAwakeCoordinator?
     private let stayAwake = StayAwake()
@@ -228,6 +228,7 @@ final class WakeTogether: NSObject {
     /// Whether the menu can offer Wake All Macs, and the hotkey that does the same.
     var canWakeAll: Bool { coordinator != nil }
     var hotKeyDisplay: String? { settings.hotKey?.display }
+    var hotKey: HotKey? { settings.hotKey }
 
     /// The Sleep & Wake pane of Settings.
     private(set) lazy var settingsPane = FormPane(id: StatusMenu.Pane.wake, title: "Sleep & Wake", symbol: "moon") { [unowned self] in

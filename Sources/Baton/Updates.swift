@@ -76,6 +76,8 @@ enum Relaunch {
     }
 
     static func now() -> Never {
+        // Sharing comes back as it is now, paused or not, whatever it is set to start as.
+        SharingPause.shared.willRestart()
         if isLaunchdJob { exit(75) }
         // Opened by hand: something has to outlive this process to start the new copy. `Process`
         // puts it in a process group of its own.
