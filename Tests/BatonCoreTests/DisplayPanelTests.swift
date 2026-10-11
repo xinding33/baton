@@ -142,6 +142,26 @@ final class DisplayPanelTests: XCTestCase {
         XCTAssertFalse(controller.isDark)
         backend.screens = backend.screens.map { var screen = $0; screen.active = false; return screen }
         XCTAssertTrue(controller.isDark)
+        backend.screens = []
+        XCTAssertTrue(controller.isDark)
+    }
+
+    func testSleepingScreensAreNotDark() throws {
+        try controller.disconnect(2)
+        // What a Mac reports once its screens have gone to sleep.
+        backend.screens[0].active = false
+        backend.screens[0].asleep = true
+        XCTAssertFalse(controller.isDark)
+        // Unplugged in its sleep, the last screen is gone like any other.
+        backend.screens = []
+        XCTAssertTrue(controller.isDark)
+    }
+
+    func testRecordsFromBeforeSleepWasToldApartStillLoad() throws {
+        let record = #"{"boot":"test-boot","displays":[{"id":2,"uuid":"two","name":"Second","builtIn":false,"active":true,"online":true,"mirrors":0}]}"#
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        try Data(record.utf8).write(to: store.url)
+        XCTAssertEqual(try store.load(), [Display(id: 2, uuid: "two", name: "Second")])
     }
 
     // MARK: Taking over from Wink

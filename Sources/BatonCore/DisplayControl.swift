@@ -1,5 +1,6 @@
 // Display disconnection, carried over from Wink (github.com/xinding33/wink, Sources/WinkCore/DisplayControl.swift
-// at 7e7315e) with its safety and recovery logic unchanged. Baton's additions are in DisplayPanel.swift.
+// at 7e7315e) with its safety and recovery logic unchanged, apart from `Display.asleep`. Baton's additions
+// are in DisplayPanel.swift.
 
 import Foundation
 import CoreGraphics
@@ -13,11 +14,26 @@ public struct Display: Codable, Equatable {
     public var active: Bool
     public var online: Bool
     public var mirrors: UInt32
+    /// Dark because the Mac put its screens to sleep. Such a display is not `active`, but it is still there.
+    public var asleep: Bool
 
     public init(id: UInt32, uuid: String, name: String, builtIn: Bool = false,
-                active: Bool = true, online: Bool = true, mirrors: UInt32 = 0) {
+                active: Bool = true, online: Bool = true, mirrors: UInt32 = 0, asleep: Bool = false) {
         self.id = id; self.uuid = uuid; self.name = name; self.builtIn = builtIn
-        self.active = active; self.online = online; self.mirrors = mirrors
+        self.active = active; self.online = online; self.mirrors = mirrors; self.asleep = asleep
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(UInt32.self, forKey: .id)
+        uuid = try c.decode(String.self, forKey: .uuid)
+        name = try c.decode(String.self, forKey: .name)
+        builtIn = try c.decode(Bool.self, forKey: .builtIn)
+        active = try c.decode(Bool.self, forKey: .active)
+        online = try c.decode(Bool.self, forKey: .online)
+        mirrors = try c.decode(UInt32.self, forKey: .mirrors)
+        // Absent from the records an earlier Baton or Wink wrote.
+        asleep = try c.decodeIfPresent(Bool.self, forKey: .asleep) ?? false
     }
 }
 
@@ -73,7 +89,7 @@ public final class NativeDisplayBackend: DisplayBackend {
             let uuid = createUUID?(id).map { CFUUIDCreateString(nil, $0.takeRetainedValue()) as String } ?? "id-\(id)"
             return Display(id: id, uuid: uuid, name: names[id] ?? (CGDisplayIsBuiltin(id) != 0 ? "Built-in Display" : "External Display \(id)"),
                            builtIn: CGDisplayIsBuiltin(id) != 0, active: CGDisplayIsActive(id) != 0,
-                           online: true, mirrors: CGDisplayMirrorsDisplay(id))
+                           online: true, mirrors: CGDisplayMirrorsDisplay(id), asleep: CGDisplayIsAsleep(id) != 0)
         }
     }
 

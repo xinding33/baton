@@ -51,10 +51,12 @@ public enum DisplayAction: Codable, Equatable, Sendable {
 }
 
 extension DisplayController {
-    /// True when no screen is active any more, e.g. because the last one was unplugged.
+    /// True when no screen is left to show anything, e.g. because the last one was unplugged.
+    /// Screens the Mac put to sleep are not active either, but they come back by themselves, and
+    /// the system refuses a display change until they do.
     public var isDark: Bool {
         guard let displays = try? backend.displays() else { return false }
-        return !displays.contains { $0.active }
+        return !displays.contains { $0.active || $0.asleep }
     }
 
     public func panel(unavailable: String? = nil, lastError: String? = nil) -> DisplayPanel {
