@@ -209,8 +209,9 @@ other Macs' displays and switches them over the link. This is
   un-mirrored first.
 - A display is recorded in `~/Library/Application Support/Baton/displays/recovery.json` before
   it is turned off. A watchdog process reconnects the recorded displays if every remaining
-  screen disappears, or if Baton stops and no new Baton has taken over 20 seconds later. It
-  logs to `~/Library/Logs/Baton/display-watchdog.log`.
+  screen disappears, or if Baton stops and no new Baton has taken over 20 seconds later. A
+  screen that is asleep has not disappeared. It logs to
+  `~/Library/Logs/Baton/display-watchdog.log`.
 
 Where Baton differs from Wink is its own restart. Displays that are off stay off when Baton is
 redeployed or restarted after a crash, so a deploy does not rearrange your windows. **Quit

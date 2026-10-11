@@ -60,6 +60,9 @@ final class DisplayToggle {
     private var standDown: String?
     private var decided = false
     private var lastError: String?
+    /// Why the displays that are off could not be brought back when they had to be. Unlike
+    /// `lastError` nobody asked for that, so it only stands while it keeps failing.
+    private var recoveryError: String?
     private var helperFailure: String?
     /// Displays that failed to turn off on their own are left alone until they are turned off by hand.
     private var gaveUp: Set<String> = []
@@ -145,7 +148,8 @@ final class DisplayToggle {
             (controller.backend as? NativeDisplayBackend)?.names.merge(names) { _, new in new }
             settle(standDown: reason)
             body()
-            let panel = controller.panel(unavailable: standDown, lastError: lastError)
+            let errors = [lastError, recoveryError == lastError ? nil : recoveryError].compactMap { $0 }
+            let panel = controller.panel(unavailable: standDown, lastError: errors.isEmpty ? nil : errors.joined(separator: "\n"))
             DispatchQueue.main.async {
                 guard panel != self.panel else { return }
                 self.panel = panel
@@ -220,7 +224,10 @@ final class DisplayToggle {
             log("displays: no active screen left; reconnecting the ones turned off")
             failures += controller.reconnectAll()
         }
-        if !failures.isEmpty { lastError = failures.joined(separator: "\n") }
+        let error = failures.isEmpty ? nil : failures.joined(separator: "\n")
+        // This runs every two seconds; say what went wrong once.
+        if let error, error != recoveryError { log("displays: could not reconnect: \(oneLine(error))") }
+        recoveryError = error
     }
 }
 
@@ -345,6 +352,7 @@ func runDisplayCheck(_ words: [String]) -> Int32 {
     func json<T: Encodable>(_ value: T) -> String { String(decoding: (try? encoder.encode(value)) ?? Data(), as: UTF8.self) }
     print("display disconnect API: \(controller.backend.available ? "available" : "unavailable")")
     print("online displays: \(json((try? controller.backend.displays()) ?? []))")
+    print("no screen left: \(controller.isDark ? "yes" : "no")")
     print("layout displays: \(currentDisplays().map { "\($0.name) \(Int($0.frame.width))x\(Int($0.frame.height)) at (\(Int($0.frame.minX)),\(Int($0.frame.minY)))" })")
     print("stands down: \(DisplayToggle.reasonToStandDown.map(oneLine) ?? "no")")
     print("turned off by Baton: \(json((try? controller.remembered()) ?? []))")
