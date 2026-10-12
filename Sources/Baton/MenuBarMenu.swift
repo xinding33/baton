@@ -48,8 +48,8 @@ enum MenuBarMenu {
             add(text, to: menu, perform: perform)
         case .home:
             add("Bring Cursor Home (⌃⌥⌘⎋)", .home, to: menu, perform: perform)
-        case let .pause(resume):
-            add(resume ? "Resume Sharing" : "Pause Sharing", .setPaused(!resume), to: menu, perform: perform)
+        case let .pause(resume, hotKey):
+            add((resume ? "Resume Sharing" : "Pause Sharing") + (hotKey.map { " (\($0))" } ?? ""), .setPaused(!resume), to: menu, perform: perform)
         case let .keyboard(owner, destinations):
             let entry = add("Keyboard: \(owner ?? "on no Mac")", to: menu, perform: perform)
             guard !destinations.isEmpty else { return }

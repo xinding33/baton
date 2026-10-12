@@ -220,7 +220,7 @@ final class WakeTogetherTests: XCTestCase {
     let controlOptionCommand = CGEventFlags([.maskControl, .maskAlternate, .maskCommand]).rawValue
 
     func testHotKeyNeedsExactlyItsModifiers() {
-        let hotKey = WakeHotKey.standard
+        let hotKey = HotKey.wakeAll
         XCTAssertEqual(hotKey.display, "⌃⌥⌘W")
         XCTAssertTrue(hotKey.matches(code: 13, flags: controlOptionCommand))
         // Caps Lock and the like are not modifiers of a shortcut.
@@ -231,13 +231,13 @@ final class WakeTogetherTests: XCTestCase {
     }
 
     func testHotKeyWithoutARealModifierNeverMatches() {
-        XCTAssertFalse(WakeHotKey(keyCode: 13, key: "W", modifiers: []).matches(code: 13, flags: 0))
-        XCTAssertFalse(WakeHotKey(keyCode: 13, key: "W", modifiers: [.shift]).matches(code: 13, flags: CGEventFlags.maskShift.rawValue))
+        XCTAssertFalse(HotKey(keyCode: 13, key: "W", modifiers: []).matches(code: 13, flags: 0))
+        XCTAssertFalse(HotKey(keyCode: 13, key: "W", modifiers: [.shift]).matches(code: 13, flags: CGEventFlags.maskShift.rawValue))
     }
 
     func testHotKeyFiresOncePerPressAndSwallowsTheRest() {
-        var recognizer = WakeHotKeyRecognizer()
-        let hotKey = WakeHotKey.standard
+        var recognizer = HotKeyRecognizer()
+        let hotKey = HotKey.wakeAll
         XCTAssertEqual(recognizer.process(hotKey, code: 13, down: true, autorepeat: false, flags: controlOptionCommand), .fire)
         XCTAssertEqual(recognizer.process(hotKey, code: 13, down: true, autorepeat: true, flags: controlOptionCommand), .swallow)
         // The modifiers may be let go before the key is.
@@ -247,8 +247,8 @@ final class WakeTogetherTests: XCTestCase {
     }
 
     func testOrdinaryTypingPassesThrough() {
-        var recognizer = WakeHotKeyRecognizer()
-        let hotKey = WakeHotKey.standard
+        var recognizer = HotKeyRecognizer()
+        let hotKey = HotKey.wakeAll
         XCTAssertEqual(recognizer.process(hotKey, code: 13, down: true, autorepeat: false, flags: 0), .pass)
         XCTAssertEqual(recognizer.process(hotKey, code: 13, down: false, autorepeat: false, flags: 0), .pass)
         XCTAssertEqual(recognizer.process(hotKey, code: 12, down: true, autorepeat: false, flags: controlOptionCommand), .pass)
@@ -264,7 +264,7 @@ final class WakeTogetherTests: XCTestCase {
         XCTAssertFalse(settings.wakeOthers)
         XCTAssertTrue(settings.keepAwake)
         XCTAssertTrue(settings.keepAwakeOnlyOnPower)
-        XCTAssertEqual(settings.hotKey, .standard)
+        XCTAssertEqual(settings.hotKey, .wakeAll)
     }
 
     func testSettingsRoundTripIncludingNoHotKey() throws {
@@ -275,7 +275,7 @@ final class WakeTogetherTests: XCTestCase {
         XCTAssertEqual(decoded, settings)
         XCTAssertNil(decoded.hotKey)
 
-        settings.hotKey = WakeHotKey(keyCode: 40, key: "K", modifiers: [.control, .shift])
+        settings.hotKey = HotKey(keyCode: 40, key: "K", modifiers: [.control, .shift])
         XCTAssertEqual(try JSONDecoder().decode(WakeSettings.self, from: JSONEncoder().encode(settings)), settings)
     }
 

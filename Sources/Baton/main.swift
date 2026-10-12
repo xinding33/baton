@@ -67,6 +67,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         displayMenu = DisplayMenu(anchor: anchor, client: client) { [weak self] in self?.refreshMenu() }
         WakeTogether.shared.onStateChanged = { [weak self] in self?.refreshMenu() }
         clipboard.start()
+        // Last of what pauses with sharing, so that a Baton that starts paused pauses all of it.
+        SharingPause.shared.onStateChanged = { [weak self] in self?.refreshMenu() }
+        if let anchor { SharingPause.shared.start(anchor: anchor) }
         Updates.shared.onStateChanged = { [weak self] in self?.refreshMenu() }
         Updates.shared.start(as: config, secret: secret, anchor: anchor, client: client)
 
@@ -87,7 +90,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         settings.onMenuIconChanged = { [weak self] in self?.refreshMenu() }
         // General first, then each feature's own pane. Where the Macs sit comes after their displays.
         // The clipboard is in the Keyboard pane, and has its own where there is none: on a client.
-        var panes: [SettingsPane?] = [settings, ScrollReverser.shared.settingsPane, keyboard?.pane, displayMenu?.settingsPane, arrangement]
+        var panes: [SettingsPane?] = [settings, anchor == nil ? nil : SharingPause.shared.settingsPane, ScrollReverser.shared.settingsPane, keyboard?.pane, displayMenu?.settingsPane, arrangement]
         panes += [WakeTogether.shared.settingsPane, keyboard == nil ? clipboard.settingsPane : nil, Updates.shared.settingsPane]
         window.setPanes(panes.compactMap { $0 })
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -120,6 +123,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case "resume":
             anchor?.setPaused(false)
             return anchor?.status() ?? "only the anchor can pause"
+        case "sharing":
+            return SharingPause.shared.command(Array(words.dropFirst()))
         case "sim":
             return anchor?.simulate(Array(words.dropFirst())) ?? client?.simulate(Array(words.dropFirst())) ?? ""
         case "arrange":
@@ -147,7 +152,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             refreshMenu()
             return "the menu bar icon is \(MenuIcon.isHidden ? "hidden" : "shown")"
         default:
-            return "commands: status, home, pause, resume, sim, arrange, keyboard, scroll, displays, wake, clipboard, update, icon, menu, settings"
+            return "commands: status, home, pause, resume, sharing, sim, arrange, keyboard, scroll, displays, wake, clipboard, update, icon, menu, settings"
         }
     }
 
@@ -179,6 +184,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             facts.peers = anchor.peerNames
             if case let .remote(name) = anchor.focus { facts.focus = name }
             facts.paused = anchor.paused
+            facts.pauseHotKey = SharingPause.shared.hotKey?.display
             facts.sharesKeyboard = anchor.currentConfig.keyboardAddress != nil
             facts.keyboardOwner = anchor.keyboardOwner
             facts.online = anchor.onlineMachines.sorted()

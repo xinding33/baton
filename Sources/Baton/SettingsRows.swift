@@ -138,6 +138,8 @@ final class FormPane: SettingsPane {
     private lazy var form = FormView()
     /// Called as the window comes up, for a pane that starts afresh each time.
     var onOpen: (() -> Void)?
+    /// Called as the window closes, for a pane that was in the middle of something.
+    var onClose: (() -> Void)?
 
     init(id: String, title: String, symbol: String, rows: @escaping () -> [SettingsRow]) {
         self.id = id
@@ -150,6 +152,7 @@ final class FormPane: SettingsPane {
     var rows: [SettingsRow] { makeRows() }
     func refresh() { form.show(makeRows()) }
     func windowWillOpen() { onOpen?() }
+    func windowDidClose() { onClose?() }
 }
 
 /// Draws a list of rows down the window, at the width of the setup form.

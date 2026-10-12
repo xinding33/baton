@@ -85,13 +85,26 @@ was made on, a display that wakes does not wake the others, and a Mac in use doe
 others awake. The switches in Settings stay as they are, and Sleep & Wake and the clipboard's
 rows say that they are paused. What is copied during a pause is not sent afterwards either. What you
 ask for by hand still happens: **Wake All Macs**, moving the keyboard from the menu, turning a
-display off or on. Updates carry on too. A pause lasts until it is resumed or Baton restarts.
+display off or on. Updates carry on too.
+
+⌃⌥⌘P pauses and resumes as the menu does, from the keyboard of whichever Mac you are at: every
+Mac listens for it, and a client asks the anchor. **Sharing** in the anchor's Settings changes
+it: **Record a New Shortcut…** takes the next combination you press, which needs at least one of
+⌃, ⌥ and ⌘ and cannot be one Baton already acts on, and **None** switches it off. Like the other
+shortcuts it is not seen while a password field has the keyboard.
+
+**When Baton starts**, in the same pane, says how sharing begins: **Start sharing**, the default,
+or **Stay paused**, which leaves each Mac to itself until you resume. That is for a start at
+login, by hand, by a deploy or after a crash. When Baton restarts by itself, for an update or
+**Apply and Restart**, sharing is left as it was, paused or not. Both settings are kept in
+`sharing.json` next to the config (`"hotKey": null` for none).
 
 Everything that is set once and left alone is in **Settings…**, a pane for each part of Baton:
 
 | Pane | What is there | Applies to |
 |---|---|---|
 | General | Name, role, pairing code, permissions, **Open at Login**, **Show in the menu bar** | this Mac |
+| Sharing | The shortcut for Pause Sharing, and whether Baton starts paused (anchor only) | all Macs |
 | Mouse | Reversing the mouse wheel | this Mac |
 | Keyboard | The shared keyboard, whether its Bluetooth connection follows the cursor and how it moves, and sharing the clipboard (anchor only) | all Macs |
 | Displays | Turning external displays off and on; the anchor also lists the other Macs' | each Mac's own |
@@ -378,6 +391,8 @@ To produce the same notarized ZIP locally, save notary credentials once with
 
 - **⌃⌥⌘⎋** brings the cursor back to the anchor.
 - **⌃⌥⌘W** wakes every Mac's display.
+- **⌃⌥⌘P** pauses sharing, and resumes it. Another shortcut, or none, is chosen under Sharing in
+  the anchor's Settings.
 - The menu bar item (⇄) shows where the cursor is and can pause sharing: the cursor, the keyboard
   following it, the clipboard, and waking and staying awake together. What needs attention on
   that Mac, such as a missing permission, is at the top of its menu. See The menu and Settings.
@@ -386,6 +401,10 @@ To produce the same notarized ZIP locally, save notary credentials once with
   keeps running. Open Baton again, or run `Baton ctl icon show`, to bring it back.
 - `Baton ctl menu` prints the menu as it stands.
 - `Baton ctl status` prints the agent's state; `Baton ctl home|pause|resume` control it.
+- `Baton ctl sharing` shows whether sharing is paused, the shortcut and how Baton starts;
+  `sharing hotkey control+option+command+p` sets the shortcut, with keys named as on the US
+  keyboard, `sharing hotkey none` removes it, and `sharing start paused|sharing` says how Baton
+  starts. These are the anchor's.
 - `Baton ctl keyboard` shows where the keyboard is; `keyboard move <machine>` hands it over and
   `keyboard follow on|off` switches following.
 - `Baton ctl scroll` shows whether this Mac reverses the wheel, and what the last scroll event was
@@ -409,8 +428,8 @@ To produce the same notarized ZIP locally, save notary credentials once with
   itself and the latest release. It works without the agent and changes nothing.
 - `Baton ctl settings` prints what the General pane shows, without the code. `settings show
   [pane]` opens the window, `settings snapshot <png path> [pane]` draws a pane to a file and
-  `settings pane <pane>` prints one. The panes are `general`, `arrange`, `keyboard`, `mouse`,
-  `displays`, `wake`, `clipboard` and `updates`. `settings name|role|code|generate|login|icon ...`
+  `settings pane <pane>` prints one. The panes are `general`, `sharing`, `arrange`, `keyboard`,
+  `mouse`, `displays`, `wake`, `clipboard` and `updates`. `settings name|role|code|generate|login|icon ...`
   fill in General and `settings apply` presses its button; `settings press <pane> <title>` flips a
   switch or presses a button in any pane, and `settings choose <pane> <title> = <option>` picks
   from a list, which is how the shared keyboard is chosen without the mouse.

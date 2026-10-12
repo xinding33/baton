@@ -27,6 +27,8 @@ public enum StatusMenu {
         /// The other Mac the cursor is on, if it is on one.
         public var focus: String?
         public var paused = false
+        /// The hotkey for Pause Sharing.
+        public var pauseHotKey: String?
         /// Whether a keyboard is shared at all.
         public var sharesKeyboard = false
         public var keyboardOwner: String?
@@ -54,7 +56,7 @@ public enum StatusMenu {
         case attention(Attention)
         case status(String)
         case home
-        case pause(resume: Bool)
+        case pause(resume: Bool, hotKey: String?)
         /// Where the shared keyboard is, and the Macs it can be moved to.
         case keyboard(owner: String?, destinations: [String])
         case wakeAll(hotKey: String?)
@@ -70,6 +72,7 @@ public enum StatusMenu {
     /// The names of the Settings panes the menu opens.
     public enum Pane {
         public static let general = "general"
+        public static let sharing = "sharing"
         public static let arrange = "arrange"
         public static let keyboard = "keyboard"
         public static let mouse = "mouse"
@@ -98,7 +101,7 @@ public enum StatusMenu {
         switch facts.role {
         case .anchor:
             main.append(.status(facts.peers.isEmpty ? "No other Macs connected" : "Connected: \(facts.peers.sorted().joined(separator: ", "))"))
-            main.append(.pause(resume: facts.paused))
+            main.append(.pause(resume: facts.paused, hotKey: facts.pauseHotKey))
             main.append(.home)
             if facts.sharesKeyboard {
                 main.append(.keyboard(owner: facts.keyboardOwner, destinations: facts.online.filter { $0 != facts.keyboardOwner }.sorted()))

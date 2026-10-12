@@ -30,84 +30,9 @@ public struct WakeLink: Hashable, Sendable {
     }
 }
 
-/// The key combination for Wake All Macs.
-public struct WakeHotKey: Codable, Equatable, Sendable {
-    public enum Modifier: String, Codable, CaseIterable, Sendable {
-        case control, option, shift, command
-
-        var flag: CGEventFlags {
-            switch self {
-            case .control: return .maskControl
-            case .option: return .maskAlternate
-            case .shift: return .maskShift
-            case .command: return .maskCommand
-            }
-        }
-
-        var symbol: String {
-            switch self {
-            case .control: return "⌃"
-            case .option: return "⌥"
-            case .shift: return "⇧"
-            case .command: return "⌘"
-            }
-        }
-    }
-
-    /// The virtual key code, e.g. 13 for W.
-    public var keyCode: UInt16
-    /// The key's name, for the menu.
-    public var key: String
-    public var modifiers: [Modifier]
-
-    public static let standard = WakeHotKey(keyCode: 13, key: "W", modifiers: [.control, .option, .command])
-
-    public init(keyCode: UInt16, key: String, modifiers: [Modifier]) {
-        self.keyCode = keyCode
-        self.key = key
-        self.modifiers = modifiers
-    }
-
-    public var display: String {
-        Modifier.allCases.filter(modifiers.contains).map(\.symbol).joined() + key
-    }
-
-    /// Whether a key going down with these flags is the hotkey. The modifiers have to match
-    /// exactly, so the same key with another modifier added stays free for apps.
-    public func matches(code: UInt16, flags: UInt64) -> Bool {
-        // Without Control, Option or Command this would swallow ordinary typing.
-        guard code == keyCode, modifiers.contains(where: { $0 != .shift }) else { return false }
-        let held = Modifier.allCases.filter { CGEventFlags(rawValue: flags).contains($0.flag) }
-        return Set(held) == Set(modifiers)
-    }
-}
-
-/// Follows the hotkey through one press, so that its auto-repeats and its release are swallowed
-/// along with the press and no application sees half of it.
-public struct WakeHotKeyRecognizer {
-    public enum Outcome: Equatable {
-        /// Not the hotkey: the event goes on as usual.
-        case pass
-        /// Part of a press that already fired.
-        case swallow
-        case fire
-    }
-
-    private var held: UInt16?
-
-    public init() {}
-
-    public mutating func process(_ hotKey: WakeHotKey?, code: UInt16, down: Bool, autorepeat: Bool, flags: UInt64) -> Outcome {
-        guard down else {
-            guard held == code else { return .pass }
-            held = nil
-            return .swallow
-        }
-        if held == code { return .swallow }
-        guard let hotKey, !autorepeat, hotKey.matches(code: code, flags: flags) else { return .pass }
-        held = code
-        return .fire
-    }
+extension HotKey {
+    /// The key combination for Wake All Macs, unless `wake.json` names another.
+    public static let wakeAll = HotKey(keyCode: 13, key: "W", modifiers: [.control, .option, .command])
 }
 
 /// One Mac's wake settings, kept in `wake.json` beside its config.
@@ -122,7 +47,7 @@ public struct WakeSettings: Codable, Equatable, Sendable {
     /// Follows `keepAwakeOnlyOnPower` too.
     public var stayAwakeWithOthers = true
     /// Nil switches the hotkey off.
-    public var hotKey: WakeHotKey? = .standard
+    public var hotKey: HotKey? = .wakeAll
 
     public init() {}
 
@@ -133,7 +58,7 @@ public struct WakeSettings: Codable, Equatable, Sendable {
         keepAwakeOnlyOnPower = try c.decodeIfPresent(Bool.self, forKey: .keepAwakeOnlyOnPower) ?? true
         stayAwakeWithOthers = try c.decodeIfPresent(Bool.self, forKey: .stayAwakeWithOthers) ?? true
         // A missing key means the usual hotkey; an explicit null means none.
-        hotKey = c.contains(.hotKey) ? try c.decode(WakeHotKey?.self, forKey: .hotKey) : .standard
+        hotKey = c.contains(.hotKey) ? try c.decode(HotKey?.self, forKey: .hotKey) : .wakeAll
     }
 
     public func encode(to encoder: Encoder) throws {

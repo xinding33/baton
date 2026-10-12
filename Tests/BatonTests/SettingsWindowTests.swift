@@ -194,12 +194,13 @@ final class SettingsWindowTests: XCTestCase {
         facts.keyboardOwner = "studio"
         facts.canWakeAll = true
         facts.wakeHotKey = "⌃⌥⌘W"
+        facts.pauseHotKey = "⌃⌥⌘P"
         facts.attention = [.init(summary: "mini has no place yet", detail: "Drag it.", pane: StatusMenu.Pane.arrange)]
         var chosen: [String] = []
         let menu = MenuBarMenu.make(StatusMenu.items(facts)) { chosen.append("\($0)") }
         let items = menu.items.filter { !$0.isSeparatorItem }
         XCTAssertEqual(items.map(\.title), [
-            "⚠︎ mini has no place yet", "Connected: mini", "Pause Sharing", "Bring Cursor Home (⌃⌥⌘⎋)", "Keyboard: studio", "Wake All Macs (⌃⌥⌘W)",
+            "⚠︎ mini has no place yet", "Connected: mini", "Pause Sharing (⌃⌥⌘P)", "Bring Cursor Home (⌃⌥⌘⎋)", "Keyboard: studio", "Wake All Macs (⌃⌥⌘W)",
             "Settings…", "Quit Baton",
         ])
         XCTAssertNil(items[1].action, "a line to read")
@@ -214,6 +215,11 @@ final class SettingsWindowTests: XCTestCase {
         XCTAssertEqual(chosen[2], "home")
         XCTAssertEqual(chosen[3], "settings(pane: nil)")
         XCTAssertEqual(chosen[4], "moveKeyboard(to: \"mini\")")
+
+        // While sharing is paused the same item resumes it, and without a hotkey it names none.
+        facts.paused = true
+        facts.pauseHotKey = nil
+        XCTAssertTrue(MenuBarMenu.make(StatusMenu.items(facts)) { _ in }.items.contains { $0.title == "Resume Sharing" })
     }
 
     // MARK: Every pane
@@ -289,12 +295,16 @@ final class SettingsWindowTests: XCTestCase {
         let clipboard = SharedClipboard(config: studio.currentConfig, secret: Data(repeating: 0x5a, count: 32), pasteboard: board, universalClipboard: { false })
         keyboard.clipboardRows = { clipboard.settingsRows() }
         let updates = Updates()
+        let sharing = SharingPause()
+        sharing.wakeAllHotKey = { .wakeAll }
+        sharing.start(anchor: studio)
         let displays = DisplayPanel(rows: [
             DisplayRow(uuid: "A", name: "Studio Display", state: .on, staysOn: "The last active screen stays on."),
             DisplayRow(uuid: "B", name: "LG UltraFine", state: .off),
         ])
         let panes: [SettingsPane] = [
             general,
+            sharing.settingsPane,
             FormPane(id: StatusMenu.Pane.mouse, title: "Mouse", symbol: "computermouse") { ScrollReverser.rows(for: ScrollSettings(), tapActive: true) { _ in } },
             keyboard.pane,
             FormPane(id: StatusMenu.Pane.displays, title: "Displays", symbol: "display") {
@@ -326,7 +336,7 @@ final class SettingsWindowTests: XCTestCase {
             frame.cacheDisplay(in: frame.bounds, to: bitmap)
             try XCTUnwrap(bitmap.representation(using: .png, properties: [:])).write(to: folder.appendingPathComponent("3\(index)-window-\(pane.id).png"))
         }
-        XCTAssertEqual(presented?.toolbar?.items.map(\.label), ["General", "Mouse", "Keyboard", "Displays", "Arrange", "Sleep & Wake", "Updates"])
+        XCTAssertEqual(presented?.toolbar?.items.map(\.label), ["General", "Sharing", "Mouse", "Keyboard", "Displays", "Arrange", "Sleep & Wake", "Updates"])
         XCTAssertEqual(keyboard.pane.rows.filter { $0.kind == .header }.map(\.title), ["Shared keyboard", "Moving between Macs", "Shared clipboard"])
         presented?.close()
     }
