@@ -53,6 +53,9 @@ final class Anchor {
     /// After a crossing the cursor must settle this long before it may cross again, so a hand
     /// resting on the border doesn't bounce it between two machines.
     private let crossingLockoutMs: UInt64 = 150
+    /// Going straight back takes a push, and a cursor that sticks where it arrived is logged.
+    private var returning = ReturnGuard()
+    private var arrival = ArrivalHold()
 
     var onStateChanged: (() -> Void)?
     /// Pause Sharing was switched. What pauses along with the cursor is told here.
@@ -226,7 +229,9 @@ final class Anchor {
     private func enterRemote(_ name: String, at point: CGPoint, flags: CGEventFlags) {
         lastCrossingAt = Net.monotonicMillis()
         focusSince = lastCrossingAt
+        returning.crossed(from: focusName, back: layout.step(from: point, on: name, toward: focusName), now: lastCrossingAt)
         if focus == .local {
+            note(arrival.ended(now: lastCrossingAt))
             // Keys a client was holding down on this Mac must not stay down after the cursor leaves.
             injector.releaseAll()
             parkPoint = cursorLocation()
@@ -254,17 +259,24 @@ final class Anchor {
         server.send(name, .leave)
         focus = .local
         let target = point ?? parkPoint
+        returning.crossed(from: name, back: point.flatMap { layout.step(from: $0, on: config.name, toward: name) }, now: lastCrossingAt)
+        arrival.arrived(at: target, now: lastCrossingAt)
         if capturing {
-            CGWarpMouseCursorPosition(target)
+            CursorPlacement.warp(to: target)
             CGAssociateMouseAndMouseCursorPosition(1)
             CursorVisibility.show()
             capturing = false
         } else {
-            CGWarpMouseCursorPosition(target)
+            CursorPlacement.warp(to: target)
         }
         lastLocation = target
         log("cursor -> \(config.name) at (\(Int(target.x)), \(Int(target.y)))")
         onStateChanged?()
+    }
+
+    private func note(_ held: ArrivalHold.Report?) {
+        guard let held else { return }
+        log("cursor held for \(held.ms) ms after arriving on \(config.name), over \(Int(held.travel)) points of mouse travel")
     }
 
     /// A client's own trackpad, mouse or keyboard was used. That is the Mac its user is looking
@@ -316,14 +328,21 @@ final class Anchor {
         case .local:
             let previous = lastLocation
             lastLocation = location
+            let now = Net.monotonicMillis()
+            note(arrival.moved(to: location, inward: returning.moved(dx: dx, dy: dy), now: now))
             guard !paused, mayCross else { return false }
             if case let .cross(name, point) = layout.move(on: config.name, from: previous, dx: dx, dy: dy),
-               isPressed(location, against: name, dx: dx, dy: dy) {
+               returning.allows(name, now: now), isPressed(location, against: name, dx: dx, dy: dy) {
                 enterRemote(name, at: point, flags: flags)
             }
             return false
         case let .remote(name):
-            switch layout.move(on: name, from: remotePosition, dx: dx, dy: dy, allowCross: mayCross) {
+            returning.moved(dx: dx, dy: dy)
+            var result = layout.move(on: name, from: remotePosition, dx: dx, dy: dy, allowCross: mayCross)
+            if case let .cross(next, _) = result, !returning.allows(next, now: Net.monotonicMillis()) {
+                result = layout.move(on: name, from: remotePosition, dx: dx, dy: dy, allowCross: false)
+            }
+            switch result {
             case let .stay(point):
                 remotePosition = point
                 server.sendMotion(name, motion(flags))
@@ -336,7 +355,7 @@ final class Anchor {
             }
             // If the system moved the parked cursor anyway, put it back.
             if capturing, abs(location.x - parkPoint.x) > 2 || abs(location.y - parkPoint.y) > 2 {
-                CGWarpMouseCursorPosition(parkPoint)
+                CursorPlacement.warp(to: parkPoint)
             }
             return true
         }
@@ -612,11 +631,11 @@ final class Anchor {
                 let here = cursorLocation()
                 lastLocation = here
                 if case let .stay(point) = layout.move(on: config.name, from: here, dx: dx, dy: dy) {
-                    CGWarpMouseCursorPosition(point)
+                    CursorPlacement.warp(to: point)
                     lastLocation = point
                 } else {
                     let edge = layout.machines[config.name]?.clamp(CGPoint(x: here.x + dx, y: here.y + dy)) ?? here
-                    CGWarpMouseCursorPosition(edge)
+                    CursorPlacement.warp(to: edge)
                     moved(dx: dx, dy: dy, location: edge, flags: [])
                 }
             } else {

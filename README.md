@@ -146,6 +146,10 @@ once. Macs that are away stay in the picture, dimmed, and keep their place.
 If you edit the file by hand, restart the agent afterwards:
 `launchctl kickstart -k gui/$(id -u)/com.xinding.baton`.
 
+The cursor lands on the very edge of the Mac it crosses to. For three quarters of a second after
+that, going straight back takes a push of 24 points against the border, so a hand that settles or
+twitches there does not send the cursor back where it came from.
+
 ## Using a Mac's own trackpad
 
 Touching a client's own trackpad, mouse or keyboard brings the shared cursor to that Mac, at the
@@ -439,7 +443,8 @@ To produce the same notarized ZIP locally, save notary credentials once with
   through the anchor, for testing without touching the mouse. On a client, `sim local` stands in
   for a touch of its trackpad and `sim sleep` goes through what it does before sleeping.
 
-Logs are in `~/Library/Logs/Baton/baton.log`.
+Logs are in `~/Library/Logs/Baton/baton.log`. On the anchor, `cursor held for … ms after arriving`
+means the cursor stayed on the border while the mouse moved on, for that long.
 
 ## Security
 
