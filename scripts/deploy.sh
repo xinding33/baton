@@ -16,7 +16,7 @@ cd "$(dirname "$0")/.."
 # Layout name, role, and SSH host of each machine. "local" is the Mac running this script.
 MACHINES=(
     "studio anchor local"
-    "mini client mac-mini"
+    "mini client mini"
     "mbp client macbook"
 )
 IDENTITY="${BATON_IDENTITY:-Developer ID Application}"
