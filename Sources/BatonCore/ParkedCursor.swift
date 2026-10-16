@@ -30,12 +30,18 @@ public struct ParkedCursor: Equatable, Sendable {
         taken = 0
     }
 
+    /// Whether a cursor seen at `location`, that should be at `park`, is to be taken back. Asks
+    /// nothing of the system, so it can come before anything that does.
+    public func isLoose(location: CGPoint, park: CGPoint, captured: Bool) -> Bool {
+        !captured || abs(Double(location.x - park.x)) > slack || abs(Double(location.y - park.y)) > slack
+    }
+
     /// The cursor here was seen at `location`, while it should be at `park`. Nil while it is there
     /// and captured; otherwise it is to be taken back.
     public mutating func check(location: CGPoint, park: CGPoint, captured: Bool) -> Loose? {
+        guard isLoose(location: location, park: park, captured: captured) else { return nil }
         let dx = Double(location.x - park.x)
         let dy = Double(location.y - park.y)
-        guard !captured || abs(dx) > slack || abs(dy) > slack else { return nil }
         taken += 1
         return Loose(distance: (dx * dx + dy * dy).squareRoot(), captured: captured, first: taken == 1)
     }

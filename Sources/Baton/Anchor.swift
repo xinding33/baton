@@ -315,9 +315,8 @@ final class Anchor {
     private func heartbeat() {
         server.pingAll()
         considerHandoff()
-        // Where the cursor really is, in case the events say otherwise. Only while the tap is up,
-        // since the mouse's movements reach the other machine only through it.
-        if case .remote = focus, tap.isActive { holdParked(at: cursorLocation()) }
+        // Where the cursor really is, in case the events say otherwise.
+        if case .remote = focus { holdParked(at: cursorLocation()) }
         guard case let .remote(name) = focus, let peer = server.peers[name] else { return }
         let silence = TimeInterval(Net.monotonicMillis() - peer.lastPongAt) / 1000
         if silence > config.timeout(for: name) {
@@ -368,9 +367,12 @@ final class Anchor {
 
     /// While the shared cursor is on another machine, the cursor here stays hidden where it was
     /// parked, and the mouse does not move it. Something else can undo that, and then the mouse
-    /// moves both cursors; this takes it back. Called from the tap, or with the tap up.
+    /// moves both cursors; this takes it back. Only while the tap is up, since the mouse's
+    /// movements reach the other machine only through it; that is asked last, as it is a call
+    /// into the system and the cursor is almost always where it should be.
     private func holdParked(at location: CGPoint) {
         guard case let .remote(name) = focus,
+              parked.isLoose(location: location, park: parkPoint, captured: capturing), tap.isActive,
               let loose = parked.check(location: location, park: parkPoint, captured: capturing) else { return }
         if loose.first {
             let state = !loose.captured ? "never captured" : CursorVisibility.isVisible.map { $0 ? "showing" : "hidden" } ?? "shown or not, unknown"

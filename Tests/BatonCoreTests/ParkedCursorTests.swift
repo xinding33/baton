@@ -26,6 +26,14 @@ final class ParkedCursorTests: XCTestCase {
         XCTAssertEqual(parked.check(location: park, park: park, captured: false), ParkedCursor.Loose(distance: 0, captured: false, first: true))
     }
 
+    func testAskingWhetherItIsLooseCountsNothing() {
+        var parked = ParkedCursor()
+        XCTAssertTrue(parked.isLoose(location: CGPoint(x: 40, y: 724), park: park, captured: true))
+        XCTAssertTrue(parked.isLoose(location: park, park: park, captured: false))
+        XCTAssertFalse(parked.isLoose(location: park, park: park, captured: true))
+        XCTAssertEqual(parked.check(location: CGPoint(x: 40, y: 724), park: park, captured: true)?.first, true)
+    }
+
     func testEachTripAwayIsReportedAfresh() {
         var parked = ParkedCursor()
         _ = parked.check(location: CGPoint(x: 40, y: 724), park: park, captured: true)
