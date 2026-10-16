@@ -56,6 +56,7 @@ final class Anchor {
     /// Going straight back takes a push, and a cursor that sticks where it arrived is logged.
     private var returning = ReturnGuard()
     private var arrival = ArrivalHold()
+    private var parked = ParkedCursor()
 
     var onStateChanged: (() -> Void)?
     /// Pause Sharing was switched. What pauses along with the cursor is told here.
@@ -235,6 +236,7 @@ final class Anchor {
             // Keys a client was holding down on this Mac must not stay down after the cursor leaves.
             injector.releaseAll()
             parkPoint = cursorLocation()
+            parked.left()
             // Only take the mouse away from the local cursor when its events can be forwarded.
             if tap.isActive {
                 CGAssociateMouseAndMouseCursorPosition(0)
@@ -270,6 +272,9 @@ final class Anchor {
             CursorPlacement.warp(to: target)
         }
         lastLocation = target
+        if let taken = parked.returned(), taken > 1 {
+            log("cursor: took the cursor here back \(taken) times while on \(name)")
+        }
         log("cursor -> \(config.name) at (\(Int(target.x)), \(Int(target.y)))")
         onStateChanged?()
     }
@@ -310,6 +315,8 @@ final class Anchor {
     private func heartbeat() {
         server.pingAll()
         considerHandoff()
+        // Where the cursor really is, in case the events say otherwise.
+        if case .remote = focus { holdParked(at: cursorLocation()) }
         guard case let .remote(name) = focus, let peer = server.peers[name] else { return }
         let silence = TimeInterval(Net.monotonicMillis() - peer.lastPongAt) / 1000
         if silence > config.timeout(for: name) {
@@ -353,12 +360,28 @@ final class Anchor {
                     enterRemote(next, at: point, flags: flags)
                 }
             }
-            // If the system moved the parked cursor anyway, put it back.
-            if capturing, abs(location.x - parkPoint.x) > 2 || abs(location.y - parkPoint.y) > 2 {
-                CursorPlacement.warp(to: parkPoint)
-            }
+            holdParked(at: location)
             return true
         }
+    }
+
+    /// While the shared cursor is on another machine, the cursor here stays hidden where it was
+    /// parked, and the mouse does not move it. Something else can undo that, and then the mouse
+    /// moves both cursors; this takes it back. Only while the tap is up, since the mouse's
+    /// movements reach the other machine only through it; that is asked last, as it is a call
+    /// into the system and the cursor is almost always where it should be.
+    private func holdParked(at location: CGPoint) {
+        guard case let .remote(name) = focus,
+              parked.isLoose(location: location, park: parkPoint, captured: capturing), tap.isActive,
+              let loose = parked.check(location: location, park: parkPoint, captured: capturing) else { return }
+        if loose.first {
+            let state = !loose.captured ? "never captured" : CursorVisibility.isVisible.map { $0 ? "showing" : "hidden" } ?? "shown or not, unknown"
+            log("cursor: the cursor here came loose while on \(name), \(Int(loose.distance)) points from where it was parked (\(state)); taking it back")
+        }
+        CGAssociateMouseAndMouseCursorPosition(0)
+        if capturing { CursorVisibility.hideAgain() } else { CursorVisibility.hide() }
+        capturing = true
+        CursorPlacement.warp(to: parkPoint)
     }
 
     /// True if the cursor really is at the edge facing `name`. The remembered previous position goes

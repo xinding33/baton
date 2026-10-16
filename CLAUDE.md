@@ -9,7 +9,7 @@ The installed Baton is the owner's working mouse and keyboard, all day.
 | Layout name | Role | SSH host |
 | --- | --- | --- |
 | `studio` | anchor (the mouse is plugged in here, and work happens here) | local |
-| `mini` | client | `mac-mini` |
+| `mini` | client | `mini` |
 | `mbp` | client, Wi-Fi only | `macbook` |
 
 - **Only the main checkout (`~/code/baton`, branch `main`) deploys.** From a worktree or feature branch, do not run `scripts/deploy.sh` or `scripts/install-agent.sh`, do not touch `~/Applications/Baton.app`, and do not `launchctl` the `com.xinding.baton` agent on any Mac. Two branches deploying in turn would swap the build under the owner's hands.

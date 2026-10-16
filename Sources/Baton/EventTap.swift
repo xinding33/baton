@@ -92,6 +92,25 @@ enum CursorVisibility {
         CGDisplayShowCursor(CGMainDisplayID())
         hidden = false
     }
+
+    /// Hides the cursor even if it was hidden already, for when something else may have shown it.
+    /// Hiding is counted, so a cursor this app hid is shown first, and the count stays at one.
+    static func hideAgain() {
+        show()
+        hide()
+    }
+
+    /// Whether the system draws the cursor, whatever this app last asked for; nil when that cannot
+    /// be asked. For the log only: Swift no longer offers the call by name.
+    static var isVisible: Bool? {
+        isVisibleCall.map { $0() != 0 }
+    }
+
+    private typealias IsVisible = @convention(c) () -> Int32
+    private static let isVisibleCall: IsVisible? = {
+        guard let handle = dlopen(nil, RTLD_NOW), let symbol = dlsym(handle, "CGCursorIsVisible") else { return nil }
+        return unsafeBitCast(symbol, to: IsVisible.self)
+    }()
 }
 
 enum Modifier {
