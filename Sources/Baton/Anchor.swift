@@ -437,8 +437,14 @@ final class Anchor {
     /// no button held, rather than leave a cursor here that the mouse moves. The lock is asked
     /// about again first, off the main thread, in case its announcement was late.
     private func checkShown(now: UInt64) {
-        guard case let .remote(name) = focus, capturing, CursorVisibility.isHidden, !confirmingShown,
+        guard case let .remote(name) = focus, capturing, !confirmingShown,
               ScreenLock.shared.isLocked != true, shownAnyway.settled(now: now) else { return }
+        // A hide the system refused is tried again, and given its time.
+        guard CursorVisibility.isHidden else {
+            CursorVisibility.hide()
+            if CursorVisibility.isHidden { shownAnyway.hid(now: now) }
+            return
+        }
         let shown = CursorVisibility.isVisible
         guard shown != false else { return }
         if CursorShownAnyway.keepsCursorHere(shown: shown, screenLocked: ScreenLock.shared.isLocked), buttonsDown.isEmpty {

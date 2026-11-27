@@ -39,9 +39,10 @@ final class ScreenLock: NSObject {
             let locked = session.map { $0["CGSSessionScreenIsLocked"] as? Bool ?? false }
             DispatchQueue.main.async { [weak self] in
                 guard let self else { return done(locked) }
-                // An announcement made since is newer than this answer.
+                // An announcement made since may be newer than this answer, so it is kept; but the
+                // caller asked for the system's answer, which is never older than one it was sent.
                 if asked == self.generation, let locked { self.isLocked = locked }
-                done(asked == self.generation ? locked : self.isLocked)
+                done(locked ?? self.isLocked)
             }
         }
     }
