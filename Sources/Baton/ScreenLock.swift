@@ -22,18 +22,26 @@ final class ScreenLock: NSObject {
         refresh()
     }
 
-    /// Asks the system whether the screen is locked, off the main thread. Call on the main thread.
+    /// Asks the system again whether the screen is locked, off the main thread, unless an answer
+    /// is already on its way. Call on the main thread.
     func refresh() {
         guard !asking else { return }
         asking = true
+        ask { [weak self] _ in self?.asking = false }
+    }
+
+    /// Asks the system whether the screen is locked, off the main thread, and calls `done` on the
+    /// main thread with the answer, nil if there was none. Call on the main thread.
+    func ask(_ done: @escaping (Bool?) -> Void) {
         let asked = generation
         DispatchQueue.global(qos: .utility).async {
             let session = CGSessionCopyCurrentDictionary() as? [String: Any]
             let locked = session.map { $0["CGSSessionScreenIsLocked"] as? Bool ?? false }
             DispatchQueue.main.async { [weak self] in
-                guard let self else { return }
-                self.asking = false
+                guard let self else { return done(locked) }
+                // An announcement made since is newer than this answer.
                 if asked == self.generation, let locked { self.isLocked = locked }
+                done(asked == self.generation ? locked : self.isLocked)
             }
         }
     }

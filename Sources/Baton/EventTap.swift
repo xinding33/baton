@@ -89,8 +89,8 @@ enum CursorVisibility {
 
     static func show() {
         guard hidden else { return }
-        CGDisplayShowCursor(CGMainDisplayID())
-        hidden = false
+        // A show the system refused leaves the hide to be undone by the next one.
+        hidden = CGDisplayShowCursor(CGMainDisplayID()) != .success
     }
 
     /// Hides the cursor even if it was hidden already, for when something else may have shown it.
