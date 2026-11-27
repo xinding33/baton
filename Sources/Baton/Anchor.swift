@@ -57,6 +57,7 @@ final class Anchor {
     private var returning = ReturnGuard()
     private var arrival = ArrivalHold()
     private var parked = ParkedCursor()
+    private var shownAnyway = CursorShownAnyway()
 
     var onStateChanged: (() -> Void)?
     /// Pause Sharing was switched. What pauses along with the cursor is told here.
@@ -102,6 +103,7 @@ final class Anchor {
             self?.displays = currentDisplays()
             self?.rebuildLayout()
         }
+        _ = ScreenLock.shared
         startTapWhenPermitted()
         timer = repeatingTimer(every: 0.25) { [weak self] in self?.heartbeat() }
     }
@@ -227,7 +229,10 @@ final class Anchor {
         buttonsDown.isEmpty && Net.monotonicMillis() - lastCrossingAt >= crossingLockoutMs
     }
 
-    private func enterRemote(_ name: String, at point: CGPoint, flags: CGEventFlags) {
+    /// `byItsOwnInput` is for a client whose own trackpad, mouse or keyboard was used: the cursor
+    /// goes there even when the system shows the cursor here, as the mouse here is not in use.
+    private func enterRemote(_ name: String, at point: CGPoint, flags: CGEventFlags, byItsOwnInput: Bool = false) {
+        if focus == .local, !capture(leavingFor: name, refusable: !byItsOwnInput) { return }
         lastCrossingAt = Net.monotonicMillis()
         focusSince = lastCrossingAt
         returning.crossed(from: focusName, back: layout.step(from: point, on: name, toward: focusName), now: lastCrossingAt)
@@ -237,12 +242,7 @@ final class Anchor {
             injector.releaseAll()
             parkPoint = cursorLocation()
             parked.left()
-            // Only take the mouse away from the local cursor when its events can be forwarded.
-            if tap.isActive {
-                CGAssociateMouseAndMouseCursorPosition(0)
-                CursorVisibility.hide()
-                capturing = true
-            }
+            shownAnyway.left()
         } else if case let .remote(previous) = focus {
             server.send(previous, .leave)
         }
@@ -251,6 +251,29 @@ final class Anchor {
         server.send(name, .enter(motion(flags)))
         log("cursor -> \(name) at (\(Int(point.x)), \(Int(point.y)))")
         onStateChanged?()
+    }
+
+    /// Takes the mouse away from the cursor here and hides it, as the shared cursor is about to leave.
+    /// Only when the mouse's events can be forwarded. When `refusable`, false if the system shows
+    /// the cursor anyway and the screen is not locked, as Mission Control does: the mouse would
+    /// then move the cursor here too, so it is given back and the shared cursor stays here.
+    private func capture(leavingFor name: String, refusable: Bool) -> Bool {
+        guard tap.isActive else { return true }
+        let now = Net.monotonicMillis()
+        if refusable, shownAnyway.refusesWithoutAsking(now: now) { return false }
+        CGAssociateMouseAndMouseCursorPosition(0)
+        CursorVisibility.hide()
+        capturing = true
+        guard refusable,
+              CursorShownAnyway.keepsCursorHere(shownAfterHiding: CursorVisibility.isVisible, screenLocked: ScreenLock.shared.isLocked)
+        else { return true }
+        CGAssociateMouseAndMouseCursorPosition(1)
+        CursorVisibility.show()
+        capturing = false
+        if shownAnyway.refused(now: now) {
+            log("cursor: stays on \(config.name) instead of going to \(name): the system shows the cursor here although Baton hid it, as Mission Control does")
+        }
+        return false
     }
 
     /// Brings the cursor back to this machine, at `point` or where it was parked.
@@ -293,7 +316,7 @@ final class Anchor {
             remotePosition = point
         } else if !paused, mayCross, !sharedInputInUse {
             log("\(name) was used directly")
-            enterRemote(name, at: point, flags: [])
+            enterRemote(name, at: point, flags: [], byItsOwnInput: true)
         }
     }
 
@@ -360,7 +383,8 @@ final class Anchor {
                     enterRemote(next, at: point, flags: flags)
                 }
             }
-            holdParked(at: location)
+            // The event's location is not where the cursor is: ask the system.
+            holdParked(at: cursorLocation())
             return true
         }
     }
@@ -370,18 +394,36 @@ final class Anchor {
     /// moves both cursors; this takes it back. Only while the tap is up, since the mouse's
     /// movements reach the other machine only through it; that is asked last, as it is a call
     /// into the system and the cursor is almost always where it should be.
+    ///
+    /// When the system shows the cursor here even after it is hidden again, something such as
+    /// Mission Control has it, and the shared cursor comes home rather than leave one here that
+    /// the mouse moves. On the lock screen it stays away, and the cursor here is no longer hidden
+    /// again on this trip, since the system will only show it.
     private func holdParked(at location: CGPoint) {
         guard case let .remote(name) = focus,
               parked.isLoose(location: location, park: parkPoint, captured: capturing), tap.isActive,
               let loose = parked.check(location: location, park: parkPoint, captured: capturing) else { return }
+        let shown = CursorVisibility.isVisible
         if loose.first {
-            let state = !loose.captured ? "never captured" : CursorVisibility.isVisible.map { $0 ? "showing" : "hidden" } ?? "shown or not, unknown"
+            let state = !loose.captured ? "never captured" : shown.map { $0 ? "showing" : "hidden" } ?? "shown or not, unknown"
             log("cursor: the cursor here came loose while on \(name), \(Int(loose.distance)) points from where it was parked (\(state)); taking it back")
         }
         CGAssociateMouseAndMouseCursorPosition(0)
-        if capturing { CursorVisibility.hideAgain() } else { CursorVisibility.hide() }
-        capturing = true
+        if !capturing {
+            CursorVisibility.hide()
+            capturing = true
+        } else if shown != false, !shownAnyway.shownWhileLocked {
+            CursorVisibility.hideAgain()
+        }
         CursorPlacement.warp(to: parkPoint)
+        guard shown != false, !shownAnyway.shownWhileLocked else { return }
+        let locked = ScreenLock.shared.isLocked
+        if CursorShownAnyway.keepsCursorHere(shownAfterHiding: CursorVisibility.isVisible, screenLocked: locked) {
+            log("cursor: the system shows the cursor here although Baton hid it, as Mission Control does; bringing the cursor home from \(name)")
+            goLocal(at: nil)
+        } else if locked, CursorVisibility.isVisible == true {
+            shownAnyway.foundShownWhileLocked()
+        }
     }
 
     /// True if the cursor really is at the edge facing `name`. The remembered previous position goes
