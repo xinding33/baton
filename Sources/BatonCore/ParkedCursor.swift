@@ -25,6 +25,9 @@ public struct ParkedCursor: Equatable, Sendable {
 
     public init() {}
 
+    /// Whether the cursor here came loose on this trip away.
+    public var wasLoose: Bool { taken > 0 }
+
     /// The shared cursor left this machine.
     public mutating func left() {
         taken = 0
